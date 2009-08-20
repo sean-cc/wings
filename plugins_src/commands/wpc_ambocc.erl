@@ -30,7 +30,13 @@ menu({tools}, Menu) ->
 menu(_, Menu) -> Menu.
 
 command({tools,ambient_occlusion}, St) ->
-    ambient_occlusion(St);
+    case wings_gl:have_fbo() of
+	true -> 
+	    %ambient_occlusion(St);
+	    ambocc_gl2:ambient_occlusion(St);
+	false ->
+	    ambient_occlusion(St)
+    end;
 command(_Cmd, _) -> next.
 
 ambient_occlusion(St) ->
