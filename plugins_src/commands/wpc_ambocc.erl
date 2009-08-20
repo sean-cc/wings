@@ -109,12 +109,18 @@ make_disp_list(St) ->
     DispList.
 
 get_ao_factor(Buffer) ->
-    Data = binary_to_list(Buffer),
-    NumWhitePixels = length([Val || Val <- Data, Val==255]),
-    Samples = 0.75*length(Data),
-    Misses = -0.25*length(Data) + NumWhitePixels,
+    NumWhitePixels = num_white(Buffer, 0),
+    Samples = 0.75*byte_size(Buffer),
+    Misses = -0.25*byte_size(Buffer) + NumWhitePixels,
     Factor = Misses/Samples,
     Factor.
+
+num_white(<<255:8,Rest/binary>>, Sum) -> 
+    num_white(Rest, Sum+1);
+num_white(<<_:8,Rest/binary>>, Sum) ->
+    num_white(Rest, Sum);
+num_white(<<>>, Sum) ->
+    Sum.
 
 read_frame() ->
     Hemirez = 64, % Must be even and/or power-of-two
