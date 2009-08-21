@@ -22,6 +22,7 @@
 
 -define(NEED_OPENGL, 1).
 -include_lib("wings.hrl").
+-include("e3d_image.hrl").
 
 -record(ao, {dl, sp, fbo, tex, cleanup_fbo}).
 -define(SIZE, 64).
@@ -56,12 +57,13 @@ setup_gl() ->
     gl:disable(?GL_LIGHTING).
 
 setup_shaders() ->
-    VS   = wings_gl:compile(vertex, fisheye()),
-    Prog = wings_gl:link_prog([VS]),
+    VS   = wings_gl:compile(vertex, fisheye_vs()),
+    FS   = wings_gl:compile(fragment, fisheye_fs()),
+    Prog = wings_gl:link_prog([VS,FS]),
     gl:useProgram(Prog),
     Buffers = wings_gl:setup_fbo({?SIZE,?SIZE}, 
-				 [{color,[{internal, ?GL_LUMINANCE8},
-					  {format,   ?GL_LUMINANCE},
+				 [{color,[%{internal, ?GL_LUMINANCE8},
+					  %{format,   ?GL_LUMINANCE},
 					  {wrap_s,   ?GL_CLAMP_TO_EDGE},
 					  {wrap_t,   ?GL_CLAMP_TO_EDGE}
 					  %%,{min, ?GL_LINEAR_MIPMAP_LINEAR}
@@ -90,10 +92,10 @@ process_obj(We, _) when ?IS_ANY_LIGHT(We) ->
 process_obj(We0, AO) ->
     #we{es=Etab,vp=Vtab,name=Name} = We0,
     io:fwrite("Processing: ~s\n", [Name]),
-    GetColor = fun(Key,_Val) ->
-		       Eye = wings_vertex:pos(Key,We0) ,
-		       LookAt = wings_vertex:normal(Key,We0),
-		       get_ao_color(Eye,LookAt,AO)
+    GetColor = fun(VertexId,_Val) ->
+		       Eye = wings_vertex:pos(VertexId,We0) ,
+		       LookAt = wings_vertex:normal(VertexId,We0),
+		       get_ao_color(VertexId, Eye,LookAt,AO)
 	       end,
     VertexColors = array:sparse_map(GetColor, Vtab),
     SetColor = fun(Edge, #edge{vs=Va,ve=Vb}, W) ->
@@ -122,6 +124,7 @@ make_disp_list(St) ->
 					end,
 			  ProcessFace = fun(Face) ->
 						gl:'begin'(?GL_POLYGON),
+						%%gl:'begin'(?GL_LINES),
 						lists:foreach(ProcessVert, Face),
 						gl:'end'()
 					end,
@@ -135,35 +138,48 @@ make_disp_list(St) ->
     gl:endList(),
     DispList.
 
-get_ao_color(Eye, Lookat, AO) ->
+get_ao_color(VId, Eye, Lookat, AO) ->
     gl:clear(?GL_COLOR_BUFFER_BIT),
     render_hemicube(Eye, Lookat, AO),
-    Factor = read_frame(AO),
+    Factor = read_frame(VId, AO),
     {Factor,Factor,Factor}.
 
-read_frame(#ao{tex=Tex, fbo=Fbo}) ->
+read_frame(Vid, #ao{tex=Tex, fbo=Fbo}) ->
     Hemirez = ?SIZE, % Must be even and/or power-of-two
     W = H = Hemirez,
     Buffer = wings_io:get_buffer(W*H, ?GL_UNSIGNED_BYTE),
     gl:bindFramebufferEXT(?GL_FRAMEBUFFER_EXT, 0),
     gl:bindTexture(?GL_TEXTURE_2D, Tex),
-    %% gl:generateMipmapEXT(?GL_TEXTURE_2D),
+    %%
+    %% Check if hardware mipmapping works on
+    %% RGB textures, they don't work with LUMINANCE on ATI
+    %% 
+    %gl:generateMipmapEXT(?GL_TEXTURE_2D),
     gl:getTexImage(?GL_TEXTURE_2D, 0, ?GL_LUMINANCE, ?GL_UNSIGNED_BYTE, Buffer),
     ImageBin = wings_io:get_bin(Buffer),
     gl:bindFramebufferEXT(?GL_FRAMEBUFFER_EXT, Fbo),
+    %% Debug 
+%%     case Vid of 
+%% 	19 ->
+%% 	    test_img("Vertex 19", ImageBin),
+%% 	    AO = get_ao_factor(ImageBin),
+%% 	    io:format("Vertex ~p: ~p~n", [Vid, AO]);
+%% 	_ ->
+%% 	    ok
+%%     end,
     get_ao_factor(ImageBin).
-    %<<Color:8, C1:8, C2:8, C3:8,_/binary>> = ImageBin,    
-    %io:format("~p ~p => ~p~n", [Color,[C1,C2,C3],Color * ?FISH_EYE_AREA / ?AREA]),
-    %erlang:max(1.0, Color/255 * ?AREA / ?FISH_EYE_AREA).
+%    <<Color:8, C1:8, C2:8, C3:8,_/binary>> = ImageBin,    
+%    io:format("~p ~p => ~p~n", [Color,[C1,C2,C3],Color * ?FISH_EYE_AREA / ?AREA]),
+%    erlang:min(1.0, Color/255 * ?AREA / ?FISH_EYE_AREA).
 
 get_ao_factor(Buffer) ->
     Occluded = num_black(Buffer, 0),
-    Result = 1 - Occluded / (?FISH_EYE_AREA),
+    Result = 1.0 - (Occluded / (?FISH_EYE_AREA)),
     erlang:min(1.0, erlang:max(0.0, Result)).
 
 num_black(<<255:8,Rest/binary>>, Sum) -> 
     num_black(Rest, Sum);
-num_black(<<_:8, Rest/binary>>, Sum) ->
+num_black(<<0:8, Rest/binary>>, Sum) ->
     num_black(Rest, Sum+1);
 num_black(<<>>, Sum) ->
     Sum.
@@ -211,22 +227,50 @@ create_ambient_light(St) ->
 	    wings_light:import(Lights,St)
     end.
 
-fisheye() ->
+fisheye_vs() ->
 <<"
+varying vec4 color;
+
 void main(void) 
 {
    float near = 0.01;
-   float far  = 1000.0;
-   vec4 pos = gl_ModelViewMatrix * gl_Vertex;
-   pos.w    = 1.0;
+   float far  = 100.0;
+   vec4 pos   = gl_ModelViewMatrix * gl_Vertex;
+   pos.w      = 1.0;
+
+   if(length(pos.xyz) > 0.001) {
+      color = vec4(0.0,0.0,0.0,1.0);
+   } else {  // Discard faces connected to the camera vertex
+      color = vec4(1.0,1.0,1.0,1.0);
+   }
+
 
    float dist = length(pos.xyz);
    pos.xy = pos.xy / dist;
 
- 
-   pos.z = -((far+near)+2*pos.z)/(far - near);
+   pos.z = -((far+near)+2.0*pos.z)/(far - near);
 
    gl_Position = pos;
-    
+   // gl_FrontColor = color;
 }   
 ">>.
+
+fisheye_fs() ->
+<<"
+varying vec4 color;
+
+void main(void) 
+{
+   // Discard faces connected to the camera vertex
+   if(color.x > 0.001)
+     discard;
+   gl_FragColor = vec4(0.0,0.0,0.0,1.0);
+}
+">>.
+
+test_img(Name, Bin) ->
+    {_,S,M} = now(),
+    Str = "_" ++ integer_to_list(S) ++ "_" ++ integer_to_list(M),
+    RGB = << <<G:8,G:8,G:8>> || <<G:8>> <= Bin >>,
+    Envelope = #e3d_image{image=RGB, width=?SIZE, height=?SIZE},
+    wings_image:new_temp(Name ++ Str, Envelope).
