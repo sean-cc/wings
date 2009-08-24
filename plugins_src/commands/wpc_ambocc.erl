@@ -32,7 +32,7 @@ menu(_, Menu) -> Menu.
 command({tools,ambient_occlusion}, St) ->
     case wings_gl:have_fbo() of
 	true -> 
-	    %ambient_occlusion(St);
+	    %%ambient_occlusion(St);
 	    ambocc_gl2:ambient_occlusion(St);
 	false ->
 	    ambient_occlusion(St)
@@ -143,7 +143,7 @@ setup_gl() ->
     gl:disable(?GL_LIGHTING).
 
 get_ao_color(Eye, Lookat, DispList) ->
-    gl:clear(?GL_COLOR_BUFFER_BIT),
+    gl:clear(?GL_COLOR_BUFFER_BIT bor ?GL_DEPTH_BUFFER_BIT),
     render_hemicube(Eye, Lookat, DispList),
     Factor = read_frame(),
     {Factor,Factor,Factor}.
