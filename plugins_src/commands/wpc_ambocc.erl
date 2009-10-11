@@ -15,8 +15,12 @@
 %%
 
 -module(wpc_ambocc).
-
+%% Plugin entry points
 -export([init/0,menu/2,command/2]).
+
+%% Reused by ambocc_glsl.erl
+-export([make_disp_list/1]).   
+
 
 -define(NEED_OPENGL, 1).
 -include_lib("wings.hrl").
@@ -32,8 +36,8 @@ menu(_, Menu) -> Menu.
 command({tools,ambient_occlusion}, St) ->
     case wings_gl:have_fbo() of
 	true -> 
-	    %%ambient_occlusion(St);
-	    ambocc_gl2:ambient_occlusion(St);
+	     ambient_occlusion(St);
+	    %ambocc_gl2:ambient_occlusion(St);
 	false ->
 	    ambient_occlusion(St)
     end;
@@ -84,35 +88,23 @@ process_obj(We0, DispList) ->
 
 make_disp_list(St) ->
     #st{shapes=Shapes} = St,
-    GetAllFaces = fun(_Key,Val) ->
-	Perm = Val#we.perm,
-	case ?IS_ANY_LIGHT(Val) or ?IS_NOT_VISIBLE(Perm) or ?IS_NOT_SELECTABLE(Perm) of
-	    true ->
-		[];
-	    false  ->
-		Fs = gb_trees:to_list(Val#we.fs),
-		[wings_face:vertex_positions(Face, Val) || {Face,_} <- Fs]
-	end
-    end,
-    AddPolygons = fun(RawFs2) ->
-	ProcessVert = fun(Vert) ->
-	    {X,Y,Z} = Vert,
-	    gl:vertex3f(X,Y,Z)
-	end,
-	ProcessFace = fun(Face) ->
-	    gl:'begin'(?GL_POLYGON),
-	    lists:foreach(ProcessVert, Face),
-	    gl:'end'()
-	end,
-	lists:foreach(ProcessFace, RawFs2)
-    end,
-    RawFs = gb_trees:map(GetAllFaces, Shapes),
-    AllRawFs = lists:append(gb_trees:values(RawFs)),
+    DrawAll = fun(We) -> draw_we(We,St) end,
     DispList = gl:genLists(1),
     gl:newList(DispList, ?GL_COMPILE),
-    AddPolygons(AllRawFs),
+    lists:foreach(DrawAll, gb_trees:values(Shapes)),    
     gl:endList(),
     DispList.
+
+draw_we(We, _) when ?IS_NOT_VISIBLE(We#we.perm) -> ok;
+draw_we(We, _) when ?IS_NOT_SELECTABLE(We#we.perm) -> ok;
+draw_we(We, _) when ?IS_ANY_LIGHT(We) -> ok;
+draw_we(We, St) ->
+    Vab = #vab{face_vs=Vs} = wings_draw_setup:we(We, [], St),
+    wings_draw_setup:enableVertexPointer(Vs),
+    Count = wings_draw_setup:face_vertex_count(Vab),
+    gl:drawArrays(?GL_TRIANGLES, 0, Count),
+    wings_draw_setup:disableVertexPointer(Vs),
+    ok.
 
 get_ao_factor(Buffer) ->
     NumWhitePixels = num_white(Buffer, 0),
@@ -140,7 +132,8 @@ setup_gl() ->
     gl:clearColor(1,1,1,0),  % Sky Color
     gl:color4f(0,0,0,1),     % Obj Color
     gl:shadeModel(?GL_FLAT),
-    gl:disable(?GL_LIGHTING).
+    gl:disable(?GL_LIGHTING),
+    gl:disable(?GL_CULL_FACE).
 
 get_ao_color(Eye, Lookat, DispList) ->
     gl:clear(?GL_COLOR_BUFFER_BIT bor ?GL_DEPTH_BUFFER_BIT),

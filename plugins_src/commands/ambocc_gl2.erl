@@ -37,7 +37,7 @@ ambient_occlusion(St) ->
     gl:pushAttrib(?GL_ALL_ATTRIB_BITS),
     setup_gl(),
     AO_0 = setup_shaders(),
-    DispList = make_disp_list(St),
+    DispList = wpc_ambocc:make_disp_list(St),
     AO = AO_0#ao{dl=DispList},
     #st{shapes=Shapes} = St,
     ProcessObject = fun(_,We) -> process_obj(We,AO) end,
@@ -56,8 +56,9 @@ setup_gl() ->
     gl:clearColor(1,1,1,0),  % Sky Color
     gl:color4f(0,0,0,1),     % Obj Color
     gl:shadeModel(?GL_FLAT),
-    gl:disable(?GL_DEPTH_TEST),
-    gl:disable(?GL_LIGHTING).
+    %% gl:disable(?GL_DEPTH_TEST),
+    gl:disable(?GL_LIGHTING),
+    gl:disable(?GL_CULL_FACE).
 
 setup_shaders() ->
     VS   = wings_gl:compile(vertex, fisheye_vs()),
@@ -65,8 +66,8 @@ setup_shaders() ->
     Prog = wings_gl:link_prog([VS,FS]),
     gl:useProgram(Prog),
     Buffers = wings_gl:setup_fbo({?TEX_SZ,?TEX_SZ}, 
-				 [{color,[{internal, ?GL_LUMINANCE8},
-					  {format,   ?GL_LUMINANCE},
+				 [{color,[%{internal, ?GL_LUMINANCE8},
+					  %{format,   ?GL_LUMINANCE},
 					  {wrap_s,   ?GL_CLAMP_TO_EDGE},
 					  {wrap_t,   ?GL_CLAMP_TO_EDGE}
 					  %%,{min, ?GL_LINEAR_MIPMAP_LINEAR}
@@ -96,7 +97,7 @@ process_obj(We, _) when ?IS_ANY_LIGHT(We) ->
 process_obj(We0, AO) ->
     #we{es=Etab,vp=Vtab,name=Name} = We0,
     io:fwrite("Processing: ~s\n", [Name]),
-    gl:clear(?GL_COLOR_BUFFER_BIT),
+    gl:clear(?GL_COLOR_BUFFER_BIT  bor ?GL_DEPTH_BUFFER_BIT),
     VertexColors = calc_ao(array:sparse_to_orddict(Vtab), We0, AO, []), 
     SetColor = fun(Edge, #edge{vs=Va,ve=Vb}, W) ->		       
 		       Color1 = array:get(Va, VertexColors),
@@ -113,9 +114,9 @@ calc_ao(VList, We, AO, Vc0) ->
 	catch _:_ ->
 		{VList, []}
 	end,
-    ?TC(render_hemisphere(0, 0, Batch, We, AO)),
-    Bin = ?TC(read_frame(AO)),
-    Vc = ?TC(get_ao_factors(Batch, Bin, Vc0)),
+    (render_hemisphere(0, 0, Batch, We, AO)),
+    Bin = (read_frame(AO)),
+    Vc = (get_ao_factors(Batch, Bin, Vc0)),
     calc_ao(Rest, We, AO, Vc).
 
 render_hemisphere(X,Y,[{Vertex,Eye}|Rest], We, AO = #ao{dl=DispList})
@@ -132,39 +133,6 @@ render_hemisphere(_,_,[], _, _) -> ok;
 render_hemisphere(_,Y,Vs,We,AO) ->
     render_hemisphere(0,Y+1,Vs,We,AO).
     
-make_disp_list(St) ->
-    #st{shapes=Shapes} = St,
-    GetAllFaces = fun(_Key,Val) ->
-			  Perm = Val#we.perm,
-			  case ?IS_ANY_LIGHT(Val) or ?IS_NOT_VISIBLE(Perm) or ?IS_NOT_SELECTABLE(Perm) of
-			      true ->
-				  [];
-			      false  ->
-				  Fs = gb_trees:to_list(Val#we.fs),
-				  [wings_face:vertex_positions(Face, Val) || {Face,_} <- Fs]
-			  end
-		  end,
-    AddPolygons = fun(RawFs2) ->
-			  ProcessVert = fun(Vert) ->
-						{X,Y,Z} = Vert,
-						gl:vertex3f(X,Y,Z)
-					end,
-			  ProcessFace = fun(Face) ->
-						gl:'begin'(?GL_POLYGON),
-						%%gl:'begin'(?GL_LINES),
-						lists:foreach(ProcessVert, Face),
-						gl:'end'()
-					end,
-			  lists:foreach(ProcessFace, RawFs2)
-		  end,
-    RawFs = gb_trees:map(GetAllFaces, Shapes),
-    AllRawFs = lists:append(gb_trees:values(RawFs)),
-    DispList = gl:genLists(1),
-    gl:newList(DispList, ?GL_COMPILE),
-    AddPolygons(AllRawFs),
-    gl:endList(),
-    DispList.
-
 read_frame(#ao{tex=Tex, fbo=Fbo, buf=Buffer}) ->
     gl:bindFramebufferEXT(?GL_FRAMEBUFFER_EXT, 0),
     gl:bindTexture(?GL_TEXTURE_2D, Tex),
@@ -176,7 +144,7 @@ read_frame(#ao{tex=Tex, fbo=Fbo, buf=Buffer}) ->
     gl:getTexImage(?GL_TEXTURE_2D, 0, ?GL_LUMINANCE, ?GL_UNSIGNED_BYTE, Buffer),
     ImageBin = wings_io:get_bin(Buffer),
     gl:bindFramebufferEXT(?GL_FRAMEBUFFER_EXT, Fbo),
-    gl:clear(?GL_COLOR_BUFFER_BIT),
+    gl:clear(?GL_COLOR_BUFFER_BIT  bor ?GL_DEPTH_BUFFER_BIT),
     %% test_img("Test", ImageBin),
     ImageBin.
 
@@ -270,8 +238,11 @@ void main(void)
    pos.w      = 1.0;
 
    if(length(pos.xyz) > 0.00001) {
-      color = vec4(0.0,0.0,0.0,1.0);
-   } else {  // Discard faces connected to the camera vertex
+       color = vec4(0.0,0.0,0.0,1.0);
+   } else {
+       // Discard faces connected to the camera vertex
+       // To avoid concave vertices, backfaces will take
+       // of shadowing anyway.
       color = vec4(1.0,1.0,1.0,1.0);
    }
 
