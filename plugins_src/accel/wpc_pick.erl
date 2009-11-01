@@ -130,14 +130,19 @@ front_face(cw) ->
 %%  triangle that are wholly or partly inside the viewing volume
 %%  (if OneHit is 'false').
 %%
+faces({Stride,Vs,_Vbo},OneHit) ->
+    faces_1(Stride, Vs, OneHit);
+faces({Stride,Vs},OneHit) ->
+    faces_1(Stride, Vs, OneHit).
+
 -ifdef(USE_DRIVER).
-faces({_,<<>>}, _) ->
+faces_1(_,<<>>, _) ->
     %% An empty binary is most probably not reference-counted,
     %% so we must *not* send it down to the driver. (The length
     %% of the I/O vector will be 2, not 3, and the driver will
     %% ignore the request without sending any data back to us.)
     [];
-faces({Stride,Bin}, OneHit0) ->
+faces_1(Stride,Bin, OneHit0) ->
     OneHit = case OneHit0 of
 		 false -> <<0>>;
 		 true -> <<1>>
@@ -159,7 +164,7 @@ faces({Stride,Bin}, OneHit0) ->
 	    end
     end.
 -else.
-faces({Stride,Bin}, OneHit) ->
+faces_1(Stride,Bin, OneHit) ->
     Matrix = get({?MODULE,matrix}),
     Cull0 = get({?MODULE,cull}) =:= true,
     CwIsFront = get({?MODULE,front_face}) =:= cw,

@@ -363,15 +363,8 @@ plain_flat_faces([{Mat,Fs}|T], #sp{we=We}=Pd, Start0, Vs0, Fmap0, MatInfo0) ->
     MatInfo = [{Mat,?GL_QUADS,Start0,Start-Start0}|MatInfo0],
     plain_flat_faces(T, Pd, Start, Vs, FaceMap, MatInfo);
 plain_flat_faces([], Pd, _Start, Vs, FaceMap, MatInfo) ->
-    case Vs of
-	<<>> ->
-	    Ns = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs
-    end,
-    S = 24,
-    Pd#sp{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},face_uv=none,
-		   face_map=reverse(FaceMap),mat_map=MatInfo}}.
+    Vab = wings_draw_setup:create_vab([vs,ns], 24, Vs, FaceMap, MatInfo),
+    Pd#sp{vab=Vab}.
 
 flat_faces_1([{Face,Edge}|Fs], We, Start, Vs, FaceMap) ->
     VsPos  = wings_face:vertex_positions(Face, Edge, We),
@@ -385,16 +378,8 @@ uv_flat_faces([{Mat,Fs}|T], #sp{we=We}=Pd, Start0, Vs0, Fmap0, MatInfo0) ->
     MatInfo = [{Mat,?GL_QUADS,Start0,Start-Start0}|MatInfo0],
     uv_flat_faces(T, Pd, Start, Vs, FaceMap, MatInfo);
 uv_flat_faces([], Pd, _Start, Vs, FaceMap, MatInfo) ->
-    case Vs of
-	<<>> ->
-	    Ns = UV = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs,
-	    <<_:3/unit:32,UV/bytes>> = Ns
-    end,
-    S = 32,
-    Pd#sp{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},face_uv={S,UV},
-		  face_map=reverse(FaceMap),mat_map=MatInfo}}.
+    Vab = wings_draw_setup:create_vab([vs,ns,uv], 32, Vs, FaceMap, MatInfo),
+    Pd#sp{vab=Vab}.
 
 uv_flat_faces_1([{Face,Edge}|Fs], We, Start, Vs, FaceMap) ->
     {VsPos,UV} = wings_va:face_pos_attr(uv, Face, Edge, We),
@@ -410,16 +395,8 @@ col_flat_faces([{Mat,Fs}|T], #sp{we=We}=Pd, Start0, Vs0, Fmap0, MatInfo0) ->
     MatInfo = [{Mat,?GL_QUADS,Start0,Start-Start0}|MatInfo0],
     col_flat_faces(T, Pd, Start, Vs, FaceMap, MatInfo);
 col_flat_faces([], Pd, _Start, Vs, FaceMap, MatInfo) ->
-    case Vs of
-	<<>> ->
-	    Ns = Col = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs,
-	    <<_:3/unit:32,Col/bytes>> = Ns
-    end,
-    S = 36,
-    Pd#sp{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},face_vc={S,Col},
-		   face_uv=none,face_map=reverse(FaceMap),mat_map=MatInfo}}.
+    Vab = wings_draw_setup:create_vab([vs,ns,col], 36, Vs, FaceMap, MatInfo),
+    Pd#sp{vab=Vab}.
 
 col_flat_faces_1([{Face,Edge}|T], We, Start, Vs, Fmap) ->
     {VsPos,Col} = wings_va:face_pos_attr(color, Face, Edge, We),
@@ -435,18 +412,8 @@ col_uv_faces([{Mat,Fs}|T], #sp{we=We}=Pd, Start0, Vs0, Fmap0, MatInfo0) ->
     MatInfo = [{Mat,?GL_QUADS,Start0,Start-Start0}|MatInfo0],
     col_uv_faces(T, Pd, Start, Vs, FaceMap, MatInfo);
 col_uv_faces([], Pd, _Start, Vs, FaceMap, MatInfo) ->
-    case Vs of
-	<<>> ->
-	    Ns = Col = UV = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs,
-	    <<_:3/unit:32,Col/bytes>> = Ns,
-	    <<_:3/unit:32,UV/bytes>> = Col
-    end,
-    S = 44,
-    Pd#sp{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},
-		   face_vc={S,Col},face_uv={S,UV},
-		   face_map=reverse(FaceMap),mat_map=MatInfo}}.
+    Vab = wings_draw_setup:create_vab([vs,ns,col,uv], 44, Vs, FaceMap, MatInfo),
+    Pd#sp{vab=Vab}.
 
 col_uv_faces_1([{Face,Edge}|Fs], We, Start, Vs, FaceMap) ->
     {VsPos,UV} = wings_va:face_pos_attr([color|uv], Face, Edge, We),

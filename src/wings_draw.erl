@@ -501,6 +501,7 @@ update_sel(#dlo{}=D) -> D.
 update_sel_all(#dlo{vab=#vab{face_vs=Vs}}=D) when Vs =/= none ->
     List = gl:genLists(1),
     gl:newList(List, ?GL_COMPILE),
+    io:format("~p:~p~n",[?MODULE,?LINE]),
     wings_draw_setup:enableVertexPointer(Vs),
     Count = wings_draw_setup:face_vertex_count(D),
     gl:drawArrays(?GL_TRIANGLES, 0, Count),
@@ -884,19 +885,21 @@ draw_flat_faces(#dlo{vab=Vab}, St) ->
     draw_flat_faces(Vab, St);
 draw_flat_faces(#vab{face_vs=BinVs,face_fn=Ns,face_uv=UV,
 		     face_vc=Col,mat_map=MatMap}=D,
-	       #st{mat=Mtab}) ->
+		#st{mat=Mtab}) ->
+    io:format("~p:~p~n",[?MODULE,?LINE]),
+    Dl = gl:genLists(1),
+    gl:newList(Dl, ?GL_COMPILE),
     wings_draw_setup:enableVertexPointer(BinVs),
     wings_draw_setup:enableNormalPointer(Ns),
     ActiveColor = wings_draw_setup:enableColorPointer(Col),
     wings_draw_setup:enableTexCoordPointer(UV),
-    Dl = gl:genLists(1),
-    gl:newList(Dl, ?GL_COMPILE),
     draw_mat_faces(MatMap, Mtab, ActiveColor),
-    gl:endList(),
     wings_draw_setup:disableVertexPointer(BinVs),
     wings_draw_setup:disableNormalPointer(Ns),
     wings_draw_setup:disableColorPointer(Col),
     wings_draw_setup:disableTexCoordPointer(UV),
+    io:format("~p:~p ~p~n",[?MODULE,?LINE,hd(gl:getIntegerv(?GL_ARRAY_BUFFER_BINDING))]),
+    gl:endList(),
     free(D),
     Dl.
 
@@ -910,6 +913,7 @@ draw_smooth_faces(#dlo{vab=Vab},St) ->
 draw_smooth_faces(#vab{face_vs=BinVs,face_sn=Ns,face_uv=UV,
 		       face_vc=Col,mat_map=MatMap}=D,
 		  #st{mat=Mtab}) ->
+    io:format("~p:~p~n",[?MODULE,?LINE]),
     wings_draw_setup:enableVertexPointer(BinVs),
     wings_draw_setup:enableNormalPointer(Ns),
     ActiveColor = wings_draw_setup:enableColorPointer(Col),
@@ -970,8 +974,11 @@ draw_mat_faces(MatGroups, Mtab, ActiveColor) ->
 		      gl:pushAttrib(?GL_TEXTURE_BIT),
 		      DeApply = wings_material:apply_material(Mat, Mtab,
 							      ActiveColor),
-		      gl:drawArrays(Type, Start, NumElements),
+		      io:format("~p:~p ~p ~p~n",[?MODULE,?LINE, hd(gl:getIntegerv(?GL_ARRAY_BUFFER_BINDING)), {Type, Start, NumElements}]),
+		      gl:drawArrays(Type, Start, NumElements div 3),
+		      io:format("~p:~p~n",[?MODULE,?LINE]),
 		      DeApply(),
+		      io:format("~p:~p~n",[?MODULE,?LINE]),
 		      gl:popAttrib()
 	      end, MatGroups)
     end.

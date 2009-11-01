@@ -20,7 +20,7 @@
 	 enableColorPointer/1,enableTexCoordPointer/1,
 	 disableVertexPointer/1,disableNormalPointer/1,
 	 disableColorPointer/1,disableTexCoordPointer/1]).
--export([face_vertex_count/1]).
+-export([face_vertex_count/1, create_vab/5]).
 
 -define(NEED_OPENGL, 1).
 -include("wings.hrl").
@@ -62,13 +62,26 @@ we_2(Dlo, Opt, St) ->
 %%%
 
 enableVertexPointer({Stride,BinVs}) ->
+    io:format("~p:~p~n",[?MODULE,?LINE]),
     gl:vertexPointer(3, ?GL_FLOAT, Stride, BinVs),
+    gl:enableClientState(?GL_VERTEX_ARRAY),
+    true;
+enableVertexPointer({Stride,_BinVs,Vbo}) ->
+    io:format("~p:~p ~p ~p~n",[?MODULE,?LINE,Vbo,Stride]),
+    gl:bindBuffer(?GL_ARRAY_BUFFER, Vbo),
+    gl:vertexPointer(3, ?GL_FLOAT, Stride, 0),
     gl:enableClientState(?GL_VERTEX_ARRAY),
     true.
 
 enableNormalPointer({Stride,Ns}) ->
     gl:normalPointer(?GL_FLOAT, Stride, Ns),
     gl:enableClientState(?GL_NORMAL_ARRAY),
+    true;
+enableNormalPointer({0,Vbo,VertexVbo}) ->
+    gl:bindBuffer(?GL_ARRAY_BUFFER, Vbo),
+    gl:normalPointer(?GL_FLOAT, 0, 0),
+    gl:enableClientState(?GL_NORMAL_ARRAY),
+    gl:bindBuffer(?GL_ARRAY_BUFFER, VertexVbo),
     true.
 
 enableColorPointer({Stride,Color}) ->
@@ -84,6 +97,9 @@ enableTexCoordPointer({Stride,UV}) ->
 enableTexCoordPointer(none) -> false.
 
 disableVertexPointer({_Stride,_BinVs}) ->
+    gl:disableClientState(?GL_VERTEX_ARRAY);
+disableVertexPointer({_Stride,_BinVs,_Vbo}) ->
+    gl:bindBuffer(?GL_ARRAY_BUFFER, 0),
     gl:disableClientState(?GL_VERTEX_ARRAY).
 
 disableNormalPointer({_Stride,_Ns}) ->
@@ -140,15 +156,8 @@ plain_flat_faces([{Mat,Fs}|T], #dlo{ns=Ns}=D, Start0, Vs0, Fmap0, MatInfo0) ->
     plain_flat_faces(T, D, Start, Vs, FaceMap, MatInfo);
 plain_flat_faces([], D, _Start, Vs, FaceMap0, MatInfo) ->
     FaceMap = array:from_orddict(sort(FaceMap0)),
-    case Vs of
-	<<>> ->
-	    Ns = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs
-    end,
-    S = 24,
-    D#dlo{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},face_uv=none,
-		   face_map=FaceMap,mat_map=MatInfo}}.
+    Vab = create_vab([vs,ns], 24, Vs, FaceMap, MatInfo),
+    D#dlo{vab=Vab}.
 
 flat_faces_1([{Face,_}|Fs], Ns, Start, Vs, FaceMap) ->
     case array:get(Face, Ns) of
@@ -175,16 +184,8 @@ uv_flat_faces([{Mat,Fs}|T], D, Start0, Vs0, Fmap0, MatInfo0) ->
     uv_flat_faces(T, D, Start, Vs, FaceMap, MatInfo);
 uv_flat_faces([], D, _Start, Vs, FaceMap0, MatInfo) ->
     FaceMap = array:from_orddict(sort(FaceMap0)),
-    case Vs of
-	<<>> ->
-	    Ns = UV = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs,
-	    <<_:3/unit:32,UV/bytes>> = Ns
-    end,
-    S = 32,
-    D#dlo{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},face_uv={S,UV},
-		   face_map=FaceMap,mat_map=MatInfo}}.
+    Vab = create_vab([vs,ns,uv], 32, Vs, FaceMap, MatInfo),
+    D#dlo{vab=Vab}.
 
 uv_flat_faces_1([{Face,Edge}|Fs], #dlo{ns=Ns,src_we=We}=D, Start, Vs, FaceMap) ->
     UVs = wings_va:face_attr(uv, Face, Edge, We),
@@ -213,17 +214,9 @@ col_flat_faces([{Mat,Fs}|T], D, Start0, Vs0, Fmap0, MatInfo0) ->
     col_flat_faces(T, D, Start, Vs, FaceMap, MatInfo);
 col_flat_faces([], D, _Start, Vs, FaceMap0, MatInfo) ->
     FaceMap = array:from_orddict(sort(FaceMap0)),
-    case Vs of
-	<<>> ->
-	    Ns = Col = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs,
-	    <<_:3/unit:32,Col/bytes>> = Ns
-    end,
-    S = 36,
-    D#dlo{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},face_vc={S,Col},
-		   face_uv=none,face_map=FaceMap,mat_map=MatInfo}}.
-
+    Vab = create_vab([vs,ns,col], 36, Vs, FaceMap, MatInfo),
+    D#dlo{vab=Vab}.
+    
 col_flat_faces_1([{Face,Edge}|T], #dlo{ns=Ns,src_we=We}=D, Start, Vs0, Fmap0) ->
     Cols = wings_va:face_attr(color, Face, Edge, We),
     case array:get(Face, Ns) of
@@ -251,18 +244,8 @@ col_uv_faces([{Mat,Fs}|T], D, Start0, Vs0, Fmap0, MatInfo0) ->
     col_uv_faces(T, D, Start, Vs, FaceMap, MatInfo);
 col_uv_faces([], D, _Start, Vs, FaceMap0, MatInfo) ->
     FaceMap = array:from_orddict(sort(FaceMap0)),
-    case Vs of
-	<<>> ->
-	    Ns = Col = UV = Vs;
-	_ ->
-	    <<_:3/unit:32,Ns/bytes>> = Vs,
-	    <<_:3/unit:32,Col/bytes>> = Ns,
-	    <<_:3/unit:32,UV/bytes>> = Col
-    end,
-    S = 44,
-    D#dlo{vab=#vab{face_vs={S,Vs},face_fn={S,Ns},
-		   face_vc={S,Col},face_uv={S,UV},
-		   face_map=FaceMap,mat_map=MatInfo}}.
+    Vab = create_vab([vs,ns,col,uv], 44, Vs, FaceMap, MatInfo),
+    D#dlo{vab=Vab}.
 
 col_uv_faces_1([{Face,Edge}|Fs], #dlo{ns=Ns,src_we=We}=D, Start, Vs, FaceMap) ->
     UVs = wings_va:face_attr([color|uv], Face, Edge, We),
@@ -298,7 +281,7 @@ setup_flat_normals_1([],_,FN) ->
     FN.
 
 setup_smooth_normals(D=#dlo{src_we=#we{}=We,ns=Ns0,mirror=MM,
-			    vab=#vab{face_map=Fmap0}=Vab}) ->
+			    vab=#vab{face_vs=Fvs,face_map=Fmap0}=Vab0}) ->
     Ns1 = array:sparse_foldl(fun(F,[N|_], A) -> [{F,N}|A];
 				(F,{N,_,_}, A) -> [{F,N}|A]
 			     end, [], Ns0),
@@ -307,7 +290,16 @@ setup_smooth_normals(D=#dlo{src_we=#we{}=We,ns=Ns0,mirror=MM,
     Ftab  = array:from_orddict(Flist),
     Fs    = lists:keysort(2, array:sparse_to_orddict(Fmap0)),
     SN = setup_smooth_normals(Fs, Ftab, Ns0, <<>>),
-    D#dlo{vab=Vab#vab{face_sn={0,SN}}}.
+    Vab = case Fvs of
+	      {_,_,VertexVbo} -> %% Using VBO
+		  [Vbo] = gl:genBuffers(1),
+		  gl:bindBuffer(?GL_ARRAY_BUFFER, Vbo),
+		  gl:bufferData(?GL_ARRAY_BUFFER, byte_size(SN), SN, ?GL_STATIC_DRAW),
+		  Vab0#vab{face_sn={0,Vbo,VertexVbo}};
+	      _ -> %% Not Using VBO
+		  Vab0#vab{face_sn={0,SN}}
+	  end,
+    D#dlo{vab=Vab}.
 
 setup_smooth_normals([{Face,{_,3}}|Fs], Ftab, Flat, SN0) ->
     %% One triangle.
@@ -706,3 +698,57 @@ prepare_2([color,uv]) ->
 		true -> color_uv
 	    end
     end.
+
+create_vab(What, Stride, Vs, FaceMap, MatInfo) ->
+    Vab = #vab{face_map=FaceMap,mat_map=MatInfo},
+    case wings_gl:is_ext({1,5}, 'GL_ARB_vertex_buffer_object') of
+	true ->
+	    [Vbo] = gl:genBuffers(1),
+	    gl:bindBuffer(?GL_ARRAY_BUFFER, Vbo),
+	    io:format("~p:~p ~p ~p ~n",[?MODULE,?LINE, Vbo, byte_size(Vs)]),
+	    gl:bufferData(?GL_ARRAY_BUFFER, byte_size(Vs), Vs, ?GL_STATIC_DRAW),
+	    %% Temp reset so nothing else is drawn between setup and draw.
+	    gl:bindBuffer(?GL_ARRAY_BUFFER, 0),
+	    setup_vbo(What, 0, Stride, Vbo, Vs, Vab); 
+	_ -> 
+	    setup_vab_old(What, 0, Stride, Vs, Vab)
+    end.
+
+setup_vbo([vs|What], Pos, Stride, Vbo, Vs, Vab) ->
+    setup_vbo(What, Pos+4*3, Stride, Vbo, Vs, Vab#vab{face_vs={Stride,Vs,Vbo}});
+setup_vbo([ns|What], Pos, Stride, Vbo, Vs, Vab) ->
+    setup_vbo(What, Pos+4*3, Stride, Vbo, Vs, Vab#vab{face_fn={Stride,Pos}});
+setup_vbo([uv|What], Pos, Stride, Vbo, Vs, Vab) ->
+    setup_vbo(What, Pos+4*2, Stride, Vbo, Vs, Vab#vab{face_uv={Stride,Pos}});
+setup_vbo([col|What], Pos, Stride, Vbo, Vs, Vab) ->
+    setup_vbo(What, Pos+4*3, Stride, Vbo, Vs, Vab#vab{face_vc={Stride,Pos}});
+setup_vbo([], _, _, _, _, Vab) ->
+    Vab.
+
+setup_vab_old([vs|What], Pos, Stride, Vs, Vab) ->
+    setup_vab_old(What, Pos+4*3, Stride, Vs, Vab#vab{face_vs={Stride,Vs}});
+setup_vab_old([ns|What], Pos, Stride, Vs, Vab) ->
+    case Vs of
+	<<>>  -> Ns = Vs;
+	_ ->
+ 	    <<_:Pos/bytes,Ns/bytes>> = Vs
+    end,
+    setup_vab_old(What, Pos+4*3, Stride, Vs, Vab#vab{face_fn={Stride,Ns}});
+setup_vab_old([uv|What], Pos, Stride, Vs, Vab) ->
+    case Vs of
+	<<>>  -> UVs = Vs;
+	_ ->
+ 	    <<_:Pos/bytes,UVs/bytes>> = Vs
+    end,
+    setup_vab_old(What, Pos+4*2, Stride, Vs, Vab#vab{face_uv={Stride,UVs}});
+setup_vab_old([col|What], Pos, Stride, Vs, Vab) ->
+    case Vs of
+	<<>>  -> Col = Vs;
+	_ ->
+ 	    <<_:Pos/bytes,Col/bytes>> = Vs
+    end,
+    setup_vab_old(What, Pos+4*3, Stride, Vs, Vab#vab{face_vc={Stride,Col}});
+setup_vab_old([], _, _, _, Vab) ->
+    Vab.
+
+
