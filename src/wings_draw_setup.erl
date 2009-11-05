@@ -78,6 +78,7 @@ enableNormalPointer({Stride,Ns}) ->
     gl:enableClientState(?GL_NORMAL_ARRAY),
     true;
 enableNormalPointer({0,Vbo,VertexVbo}) ->
+    io:format("~p:~p Using Smooth ~p resetting to ~p~n",[?MODULE,?LINE,Vbo,VertexVbo]),
     gl:bindBuffer(?GL_ARRAY_BUFFER, Vbo),
     gl:normalPointer(?GL_FLOAT, 0, 0),
     gl:enableClientState(?GL_NORMAL_ARRAY),
@@ -103,7 +104,10 @@ disableVertexPointer({_Stride,_BinVs,_Vbo}) ->
     gl:disableClientState(?GL_VERTEX_ARRAY).
 
 disableNormalPointer({_Stride,_Ns}) ->
+    gl:disableClientState(?GL_NORMAL_ARRAY);
+disableNormalPointer({0, _Stride,_Ns}) ->
     gl:disableClientState(?GL_NORMAL_ARRAY).
+
 
 disableColorPointer({_Stride,_Color}) ->
     gl:disableClientState(?GL_COLOR_ARRAY);
@@ -289,12 +293,13 @@ setup_smooth_normals(D=#dlo{src_we=#we{}=We,ns=Ns0,mirror=MM,
     Flist = wings_we:normals(Ns, We, MM),
     Ftab  = array:from_orddict(Flist),
     Fs    = lists:keysort(2, array:sparse_to_orddict(Fmap0)),
-    SN = setup_smooth_normals(Fs, Ftab, Ns0, <<>>),
+    SN  = setup_smooth_normals(Fs, Ftab, Ns0, <<>>),
     Vab = case Fvs of
 	      {_,_,VertexVbo} -> %% Using VBO
 		  [Vbo] = gl:genBuffers(1),
 		  gl:bindBuffer(?GL_ARRAY_BUFFER, Vbo),
 		  gl:bufferData(?GL_ARRAY_BUFFER, byte_size(SN), SN, ?GL_STATIC_DRAW),
+		  gl:bindBuffer(?GL_ARRAY_BUFFER, VertexVbo),
 		  Vab0#vab{face_sn={0,Vbo,VertexVbo}};
 	      _ -> %% Not Using VBO
 		  Vab0#vab{face_sn={0,SN}}

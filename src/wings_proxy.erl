@@ -52,7 +52,7 @@ quick_preview(_St) ->
     end.
 
 -spec invalidate('none'|#sp{}, 'vab'|'dl'|'edges'|'maybe') ->
-    'none'|#sp{}.
+			'none'|#sp{}.
 
 invalidate(none, _) -> none;
 invalidate(#sp{}=Pd, 'vab') ->
@@ -158,7 +158,7 @@ update_edges_1(#dlo{src_we=#we{vp=OldVtab}}, #sp{we=#we{vp=Vtab,es=Etab}=We}, so
 			      {X1,Y1,Z1} = array:get(Va,Vtab),
 			      {X2,Y2,Z2} = array:get(Vb,Vtab),
 			      <<Bin/binary,X1:?F32,Y1:?F32,Z1:?F32,
-			       X2:?F32,Y2:?F32,Z2:?F32>>
+				X2:?F32,Y2:?F32,Z2:?F32>>
 		      end, <<>>, Edges),
     gl:enableClientState(?GL_VERTEX_ARRAY),
     wings_draw:drawVertices(?GL_LINES, Bin),
@@ -182,14 +182,24 @@ smooth(D=#dlo{proxy=false},_) -> D;
 smooth(D=#dlo{drag=Active},_) when Active =/= none -> D;
 smooth(D=#dlo{src_we=We},_) when ?IS_ANY_LIGHT(We) -> D;
 smooth(D=#dlo{proxy_data=#sp{smooth=none,
-			     vab=#vab{face_map=FN}=Vab0,
+			     vab=#vab{face_map=FN,face_vs=Fvs}=Vab0,
 			     we=We}=Pd0,
 	      mirror=MM},St) ->
     PartialNs = lists:sort(FN),
     Flist = wings_we:normals(PartialNs, We, MM),
     Ftab  = array:from_orddict(Flist),
     SN    = setup_smooth_normals(FN, Ftab, <<>>),
-    Vab   = Vab0#vab{face_sn={0,SN}},
+    Vab   = case Fvs of
+		{_,_,VertexVbo} -> %% Using VBO
+		    [Vbo] = gl:genBuffers(1),
+		    io:format("~p:~p Creating Smooth ~p~n",[?MODULE,?LINE,Vbo]),
+		    gl:bindBuffer(?GL_ARRAY_BUFFER, Vbo),
+		    gl:bufferData(?GL_ARRAY_BUFFER, byte_size(SN), SN, ?GL_STATIC_DRAW),
+		    gl:bindBuffer(?GL_ARRAY_BUFFER, VertexVbo),
+		    Vab0#vab{face_sn={0,Vbo,VertexVbo}};
+		_ -> %% Not Using VBO
+		    Vab0#vab{face_sn={0,SN}}
+	    end,
     DL    = wings_draw:draw_smooth_faces(Vab, St),
     D#dlo{proxy_data=Pd0#sp{smooth=DL, vab=Vab}};
 smooth(D,_) ->
