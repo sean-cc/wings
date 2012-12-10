@@ -9,7 +9,7 @@
 // See 3Dlabs-License.txt for license information
 //
 
-in vec4 wings_tangent;
+#define wings_tangent gl_MultiTexCoord1
 
 varying vec3 normal;
 varying vec3 ecPosition;

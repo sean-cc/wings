@@ -17,12 +17,7 @@ varying vec3 ecPosition;
 varying vec4 color;
 varying vec4 tangent;
 
-vec4 get_diffuse() {
-    ivec2 dim = textureSize(DiffuseMap, 0);
-    if(dim.x > 1 && dim.y > 1) return texture2D(DiffuseMap, gl_TexCoord[0].xy);
-    else return vec4(1.0, 1.0, 1.0, 1.0);
-}
-
+#if __VERSION__ >= 130
 vec3 get_normal() {
     ivec2 dim = textureSize(NormalMap, 0);
     vec3 T = tangent.xyz;
@@ -42,6 +37,24 @@ vec3 get_normal() {
     NewNormal = normalize(NewNormal);
     return NewNormal;
 }
+
+vec4 get_diffuse() {
+    ivec2 dim = textureSize(DiffuseMap, 0);
+    if(dim.x > 1 && dim.y > 1) return texture2D(DiffuseMap, gl_TexCoord[0].xy);
+    else return vec4(1.0, 1.0, 1.0, 1.0);
+}
+
+#else 
+## SIGH APPLE
+vec3 get_normal() {
+     return normalize(normal); // No normal-map or Tangents
+}
+
+vec4 get_diffuse() {
+     return vec4(1.0, 1.0, 1.0, 1.0);
+}
+#endif
+
 
 void main(void)
 {

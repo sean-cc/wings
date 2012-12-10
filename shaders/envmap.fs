@@ -25,6 +25,7 @@ varying vec4 tangent;
 
 vec3 LightPos = vec3(0.0, 10.0, 0.0);
 
+#if __VERSION__ >= 130
 vec3 get_normal() {
     ivec2 dim = textureSize(NormalMap, 0);
     vec3 T = tangent.xyz;
@@ -44,6 +45,11 @@ vec3 get_normal() {
     NewNormal = normalize(NewNormal);
     return NewNormal;
 }
+#else 
+vec3 get_normal() {
+	return normalize(Normal); // No normal-map or Tangents
+}
+#endif
 
 void main()
 {
