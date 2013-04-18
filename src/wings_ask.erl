@@ -17,6 +17,9 @@
 	 ask_preview/5,dialog_preview/5,
 	 hsv_to_rgb/1,hsv_to_rgb/3,rgb_to_hsv/1,rgb_to_hsv/3]).
 
+%% export to wings_dialog
+-export([validator/2, eval_integer/1, eval_float/1]).
+
 -define(NEED_OPENGL, 1).
 -define(NEED_ESDL, 1).
 -include("wings.hrl").

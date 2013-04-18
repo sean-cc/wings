@@ -183,7 +183,7 @@ listing() ->
     listing_1(Keys, []).
 
 listing_1([{Mode,Keys}|T], Acc0) ->
-    Acc = [list_keys(Keys),list_header(Mode)|Acc0],
+    Acc = [{table, 2, list_header(Mode), list_keys(Keys)}|Acc0],
     listing_1(T, Acc);
 listing_1([], Acc) -> reverse(Acc).
 
@@ -202,8 +202,7 @@ list_keys([{Key,Cmd,Src}|T]) ->
 		 user -> ?STR(list_keys,1," (user-defined)");
 		 plugin -> ?STR(list_keys,2," (plug-in-defined)")
 	     end,
-    KeyStr ++ ": " ++ wings_util:stringify(Cmd) ++ SrcStr ++ 
-	"\n" ++ list_keys(T);
+    [[KeyStr,wings_util:stringify(Cmd) ++ SrcStr]|list_keys(T)];
 list_keys([]) -> [].
 
 

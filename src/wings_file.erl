@@ -14,6 +14,7 @@
 -module(wings_file).
 -export([init/0,init_autosave/0,menu/1,command/2]).
 -export([import_filename/2,export_filename/2,export_filename/3]).
+-export([file_filters/1]).
 
 -include("wings.hrl").
 -include("e3d.hrl").
@@ -719,6 +720,42 @@ install_plugin() ->
     end,
     Cont = fun(Name) -> {file,{install_plugin,Name}} end,
     import_filename(Props, Cont).
+
+
+file_filters(Prop) ->
+    Exts = case proplists:get_value(extensions, Prop, none) of
+	       none ->
+		   Ext = proplists:get_value(ext, Prop, ".wings"),
+		   ExtDesc = proplists:get_value(ext_desc, Prop,
+						 ?__(1,"Wings File")),
+		   [{Ext,ExtDesc}];
+	       Other -> Other
+	   end,
+    lists:flatten([file_add_all(Exts),
+		   file_filters_0(Exts++[{".*", ?__(2,"All Files")}])]).
+
+file_filters_0(Exts) ->
+    file_filters_1(lists:reverse(Exts),[]).
+
+file_filters_1([{Ext,Desc}|T], Acc) ->
+    Wildcard = "*" ++ Ext,
+    ExtString = [Desc," (",Wildcard,")","|",Wildcard|Acc],
+    case T of
+	[] -> ExtString;
+	_  ->
+	    file_filters_1(T, ["|"|ExtString])
+    end.
+    
+file_add_all([_]) -> [];
+file_add_all(Exts) ->
+    All0 = ["*"++E || {E,_} <- Exts],
+    All = file_add_semicolons(All0),
+    [?__(1,"All Formats")++" (",All,")", "|", All].
+
+file_add_semicolons([E1|[_|_]=T]) ->
+    [E1,";"|file_add_semicolons(T)];
+file_add_semicolons(Other) -> Other.
+
 
 %%%    
 %%% Utilities.

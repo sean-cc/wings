@@ -13,6 +13,11 @@
 
 -module(wings_io_wx).
 
+-define(NEED_OPENGL, 1).
+-define(NEED_ESDL, 1).  %% Keyboard and mouse mappings
+
+-include("wings.hrl").
+
 -ifdef(USE_WX).
 -export([init/1, quit/0, version_info/0,
 	 set_cursor/1,hourglass/0,eyedropper/0,
@@ -26,10 +31,6 @@
 -export([reset_grab/0,grab/0,ungrab/2,is_grabbed/0,warp/2]).
 -export([reset_video_mode_for_gl/2, swapBuffers/0]).
 
--define(NEED_OPENGL, 1).
--define(NEED_ESDL, 1).  %% Keyboard and mouse mappings
-
--include("wings.hrl").
 -import(lists, [flatmap/2,member/2,reverse/1,reverse/2]).
 
 -import(wings_io, [put_state/1, get_state/0]).
