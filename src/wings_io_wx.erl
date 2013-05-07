@@ -88,11 +88,11 @@ version_info() ->
 build_cursors() ->
     [
      {stop,      wxCursor:new(?wxCURSOR_NO_ENTRY)},
-     {pointing_hand, wxCursor:new(?wxCURSOR_POINT_LEFT)},
-     {closed_hand, wxCursor:new(?wxCURSOR_HAND)},
+     {pointing_hand, wxCursor:new(?wxCURSOR_HAND)},
+     {closed_hand, wxCursor:new(?wxCURSOR_BULLSEYE)},
      {arrow, wxCursor:new(?wxCURSOR_ARROW)},
      {hourglass, wxCursor:new(?wxCURSOR_WAIT)},
-     {eyedropper, wxCursor:new(?wxCURSOR_QUESTION_ARROW)}, %% :-/  Fix me
+     {eyedropper, wxCursor:new(?wxCURSOR_MAGNIFIER)}, %% :-/  Fix me
      {blank, blank(wxCursor:new(?wxCURSOR_BLANK))}
     ].
 

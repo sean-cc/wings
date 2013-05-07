@@ -509,11 +509,11 @@ camera() ->
 	     [{"24x36",{24,36}},{"60x60",{60,60}},{?__(4,"Custom"),custom}],
 	     NegativeFormat,
 	     [{key,negative_format},layout,
-	     {hook,
-	      fun (update, {Var,_I,Val,Sto}) ->
-		      {store,camera_update_1(Var, Val, Sto)};
-		  (_, _)  -> void
-	      end}]},
+	      {hook,
+	       fun (update, {Var,_I,Val,Sto}) ->
+		       {store,camera_update_1(Var, Val, Sto)};
+		   (_, _)  -> void
+	       end}]},
 	    {hframe,
 	     [{text,
 	       NegH,
@@ -597,20 +597,21 @@ camera() ->
 	   {vframe,[help_button(camera_settings_fov),
 		    panel,
 		    panel]}]}],
-    wings_ask:dialog(?__(18,"Camera Settings"), Qs,
-		     fun([_,
-			  {negative_format,_},
-			  {negative_height,_},{negative_width,_},
-			  {lens_type,_},{lens_length,_},
-			  {zoom_slider,_},{zoom,_},
-			  {fov,Fov},Hither,Yon]=Ps) ->
-			     {NH,NW} = camera_propconv_negative_format(Ps),
-			     View = View0#view{fov=Fov,hither=Hither,yon=Yon},
-			     wings_wm:set_prop(Active, current_view, View),
-			     wings_pref:set_value(negative_height, NH),
-			     wings_pref:set_value(negative_width, NW),
-			     ignore
-		     end).
+    Apply = fun([_,
+		 {negative_format,_},
+		 {negative_height,_},{negative_width,_},
+		 {lens_type,_},{lens_length,_},
+		 {zoom_slider,_},{zoom,_},
+		 {fov,Fov},Hither,Yon]=Ps) ->
+		    {NH,NW} = camera_propconv_negative_format(Ps),
+		    View = View0#view{fov=Fov,hither=Hither,yon=Yon},
+		    wings_wm:set_prop(Active, current_view, View),
+		    wings_pref:set_value(negative_height, NH),
+		    wings_pref:set_value(negative_width, NW),
+		    ignore
+	    end,
+
+    wings_dialog:dialog(?__(18,"Camera Settings"), Qs, Apply).
 
 camera_update_1(Var, Val, Sto) ->
     Props = gbget(lists:delete(Var, [fov,negative_format,
@@ -1123,13 +1124,12 @@ views({move,J}, #st{views={CurrentView,Views}}=St) ->
 views(rename, #st{views={CurrentView,Views}}=St) ->
     J = view_index(CurrentView, tuple_size(Views)),
     {View,Legend} = element(J, Views),
-    wings_ask:dialog(
-      ?__(3,"Rename view"),
-      views_rename_qs([Legend]),
-      fun([NewLegend]) ->
-	      St#st{views={CurrentView,
-			   setelement(J, Views, {View,NewLegend})}}
-      end);
+    wings_dialog:dialog(?__(3,"Rename view"),
+			views_rename_qs([Legend]),
+			fun([NewLegend]) ->
+				St#st{views={CurrentView,
+					     setelement(J, Views, {View,NewLegend})}}
+			end);
 views(delete, #st{views={CurrentView,Views}}=St) ->
     View = current(),
     J = view_index(CurrentView, tuple_size(Views)),
@@ -1151,9 +1151,9 @@ views(delete_all, St) ->
       end).
 
 views_save_dialog(Ask, Options) ->
-    wings_ask:dialog(Ask, ?__(1,"Save view as"),
-		     views_rename_qs(Options),
-		     fun(Opts) -> {view,{views,{save,Opts}}} end).
+    wings_dialog:dialog(Ask, ?__(1,"Save view as"),
+			views_rename_qs(Options),
+			fun(Opts) -> {view,{views,{save,Opts}}} end).
 
 views_rename_qs([Legend]) ->
     [{hframe,[{label,?__(1,"Name")},{text,Legend}]}].
