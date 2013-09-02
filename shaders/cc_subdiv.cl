@@ -87,8 +87,8 @@ __kernel void gen_faces(
 			__global float4 *VsOut,
 			__global int4 *FsOut,
 			//__global int *locks,
-			const uint noFs,
-			const uint noVs
+			const int noFs,
+			const int noVs
 			)
 {
   int i;
@@ -104,7 +104,7 @@ __kernel void gen_faces(
 
   center /= (float) i;
   // Create new center vertex
-  const uint ov_id = noVs + face_id;
+  const int ov_id = noVs + face_id;
   center.w = fi.len*4.0f;  // Valance = faceVs and hard_edge count = 0 (Valance << 2)
   VsOut[ov_id] = center;
 
@@ -126,9 +126,9 @@ __kernel void add_center(
 			 __global int *FsIn,
 			 __global FaceIndex *FiIn,
 			 __global float4 *VsOut,
-			 const uint noFs,
-			 const uint noVsIn,
-			 const uint noVsOut
+			 const int noFs,
+			 const int noVsIn,
+			 const int noVsOut
 			 )
 {
   int i, face_id, stop;
@@ -136,11 +136,11 @@ __kernel void add_center(
   if (id >= PL_UNITS) return;  // Should only run by PL_UNITS "threads"
 
   FaceIndex fi;
-  uint ov_id;
+  int ov_id;
   float4 center;
   float4 zero = {0.0f,0.0f,0.0f,0.0f}; 
-  uint sect = noVsOut * id;
-  uint chunk_sz = ceil((float) noFs / (float) PL_UNITS);
+  int sect = noVsOut * id;
+  int chunk_sz = ceil((float) noFs / (float) PL_UNITS);
   face_id = id*chunk_sz;
   stop = min(face_id+chunk_sz, noFs);
   
@@ -171,9 +171,9 @@ __kernel void gen_edges(__global float4 *VsIn,
 			__global float4 *VsOut,
 			__global int  *FsOut,
 			__global int4 *EsOut,
-			const uint noFs,
-			const uint noVs,
-			const uint noEs)
+			const int noFs,
+			const int noVs,
+			const int noEs)
 {
   const int edge_id = get_global_id(0);
   if (edge_id >= noEs)
@@ -260,8 +260,8 @@ __kernel void add_edge_verts(
 			     __global float4 *VsIn,
 			     __global float4 *VsOut,
 			     __global int4 *EsIn,
-			     const uint noEs,
-			     const uint noVsOut
+			     const int noEs,
+			     const int noVsOut
 			     )
 {
   const int thread = get_global_id(0);
@@ -271,8 +271,8 @@ __kernel void add_edge_verts(
   int4 edge;
   float4 v0,v1;
   int hard_v0=0, hard_v1=0;
-  uint sect = noVsOut * thread;
-  uint chunk_sz = ceil((float) noEs / (float) PL_UNITS);
+  int sect = noVsOut * thread;
+  int chunk_sz = ceil((float) noEs / (float) PL_UNITS);
   id = thread*chunk_sz;
   stop = min(id+chunk_sz, noEs);
 
@@ -311,8 +311,8 @@ __kernel void add_edge_verts(
 __kernel void move_verts(
 			 __global float4 *VsIn,
 			 __global float4 *VsOut,
-			 const uint noInVs,
-			 const uint noOutVs
+			 const int noInVs,
+			 const int noOutVs
 			 )
 {
   const int v_id = get_global_id(0);
@@ -330,7 +330,7 @@ __kernel void move_verts(
   // Sum all sections and reset them afterwards
   v_out = VsOut[v_id];
   for(int i=1; i<PL_UNITS; i++) {
-      uint id = noOutVs*i+v_id;
+      int id = noOutVs*i+v_id;
       v_out.xyz += VsOut[id].xyz;
       VsOut[id] = zero;
   }
@@ -365,7 +365,7 @@ __kernel void subd_vcolor(
 			 __global ccfloat3 *AsIn,
 			 __global FaceIndex *FiIn,
 			 __global ccfloat3 *AsOut,
-			 const uint noFs
+			 const int noFs
 			 )
 {
     int i;
@@ -411,7 +411,7 @@ __kernel void subd_uv(
 		      __global float2 *AsIn,
 		      __global FaceIndex *FiIn,
 		      __global float2 *AsOut,
-		      const uint noFs
+		      const int noFs
 		      )
 {
     int i;
@@ -452,7 +452,7 @@ __kernel void subd_col_uv(
 			 __global color_uv *AsIn,
 			 __global FaceIndex *FiIn,
 			 __global color_uv *AsOut,
-			 const uint noFs
+			 const int noFs
 			 )
 {
     int i;
@@ -494,7 +494,7 @@ __kernel void create_vab_all(
 				__global float4 *Vs,
 				__global int4 *Fs,
 				__global float *Vab,
-				const uint noFs
+				const int noFs
 				)
 {
     const int id = get_global_id(0);
@@ -637,7 +637,7 @@ __kernel void gen_some_edges(__global int4   *EsIn,
 			     __global float4 *VsIn, 
 			     __global ccfloat3 *VsOut,
 			     uint level,
-			     const uint noEs)
+			     const int noEs)
 {
     const int edge_id = get_global_id(0);
     if (edge_id >= noEs)
@@ -696,8 +696,8 @@ __kernel void smooth_ns_pass0(
 			      __global int4 *FsIn,
 			      __global ccfloat3 *Vab,
 			      __global float4 *Smooth,
-			      const uint noFs,
-			      const uint noVsOut
+			      const int noFs,
+			      const int noVsOut
 			      )
 {
     const int thread = get_global_id(0);
@@ -706,8 +706,8 @@ __kernel void smooth_ns_pass0(
     float4 normal;
     global ccfloat3 *temp;
     int4 face_vs;
-    uint id, stop, sect = noVsOut * thread;
-    uint chunk_sz = ceil((float) noFs / (float) PL_UNITS);
+    int id, stop, sect = noVsOut * thread;
+    int chunk_sz = ceil((float) noFs / (float) PL_UNITS);
     id = thread*chunk_sz;
     stop = min(id+chunk_sz, noFs);
     
@@ -879,15 +879,15 @@ __kernel void gen_tangents_uv(__global float4 *VsIn,
 			      __global int4   *FsIn,
 			      __global float2 *AsIn,
 			      __global float4 *TanOut,
-			      const uint NoFs,			      
-			      const uint NoVs)
+			      const int NoFs,			      
+			      const int NoVs)
 {
     float4 t, b;    
     const int id = get_global_id(0);
     if (id >= PL_UNITS) return;  // Should only run by PL_UNITS "threads"
-    uint chunk_sz = ceil((float) NoFs / (float) PL_UNITS);
-    uint face_id = id*chunk_sz;
-    uint stop = min(face_id+chunk_sz, NoFs);
+    int chunk_sz = ceil((float) NoFs / (float) PL_UNITS);
+    int face_id = id*chunk_sz;
+    int stop = min(face_id+chunk_sz, NoFs);
     
     for(int i = face_id; i < stop; i++) {
        int4 face = FsIn[i];
@@ -933,21 +933,21 @@ __kernel void gen_tangents_col_uv(__global float4 *VsIn,
 				  __global int4   *FsIn,
 				  __global color_uv *AsIn,
 				  __global float4 *TanOut,
-				  const uint NoFs,			      
-				  const uint NoVs)
+				  const int NoFs,			      
+				  const int NoVs)
 {
     float4 t, b;    
     const int id = get_global_id(0);
     if (id >= PL_UNITS) return;  // Should only run by PL_UNITS "threads"
-    uint chunk_sz = ceil((float) NoFs / (float) PL_UNITS);
-    uint face_id = id*chunk_sz;
-    uint stop = min(face_id+chunk_sz, NoFs);
+    int chunk_sz = ceil((float) NoFs / (float) PL_UNITS);
+    int face_id = id*chunk_sz;
+    int stop = min(face_id+chunk_sz, NoFs);
     
     float2 w1;
     float2 w2;
     float2 w3;
     
-    for(uint i = face_id; i < stop; i++) {
+    for(int i = face_id; i < stop; i++) {
 	int4 face = FsIn[i];
 	float4 v1 = VsIn[face.x];
 	float4 v2 = VsIn[face.y];
@@ -990,14 +990,13 @@ __kernel void gen_tangents(__global int4   *FsIn,
 			   __global ccfloat3 *Vab,
 			   __global float4 *VTanBi,
 			   __global float4 *Tan,
-			   const uint NoFs,
-			   const uint NoVs
+			   const int NoFs,
+			   const int NoVs
 			   )
 {
     const int Fid = get_global_id(0);
     if(Fid >= NoFs) return;
     
-    int StartBi = NoFs*4;
     int4 face = FsIn[Fid];
     int vstart = Fid*4;
     ccfloat3 normal = Vab[(Fid*4*2)+1]; // Every vertex have the same normal
@@ -1010,9 +1009,9 @@ __kernel void gen_tangents(__global int4   *FsIn,
 
 float4 calc_tan(float4 Tan, float4 Bi, float4 normal)
 {
-    float h = -1.0;
-    if (dot(cross(normal, Tan), Bi) < 0.0)
-	h = 1.0;
+    float h = -1.0F;
+    if (dot(cross(normal, Tan), Bi) < 0.0F)
+	h = 1.0F;
     float4 temp = normalize(Tan);
     temp.w = h;
     return temp;
