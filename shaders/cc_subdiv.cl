@@ -680,16 +680,14 @@ __kernel void gen_some_edges(__global int4   *EsIn,
 }
 
 // ---------------- Normal calculation --------------------
-__kernel void clearf(__global float *mem,
-		     const int isz,
-		     const int sz)
+__kernel void memset4f(__global float4 *mem,
+		       const float value,
+		       const int sz)
 {
     const int id = get_global_id(0);
     if(id >= sz) return;
-    int pos = id*isz;
-    for(int i=0; i < isz; i++) {
-	mem[pos+i] = 0.0f;
-    }
+    const float4 vec = {value, value, value, value};
+    mem[id] = vec;
 }
 
 __kernel void smooth_ns_pass0(

@@ -583,7 +583,7 @@ gen_edges(some, [Es,Vs,As,N,TotNoEs], Wait, CL) ->
 
 gen_tangents(Type, Vs, Fs, As, Vab, NoVs, NoFs, Temp, CL) 
   when Type =:= uv_tangent; Type =:= color_uv_tangent ->
-    C1 = wings_cl:cast(clearf, [Temp,4,NoVs*2], NoVs*2, [], CL),
+    C1 = wings_cl:cast(memset4f, [Temp,0.0,NoVs*2], NoVs*2, [], CL),
     C2 = case Type of 
 	     uv_tangent -> 
 		 wings_cl:cast(gen_tangents_uv, [Vs, Fs, As, Temp, NoFs, NoVs], ?PL_UNITS, [C1], CL);
@@ -602,9 +602,9 @@ gen_smooth_normals(Vab, NoFs,
 		   #cl_mem{f=Fs,e=Es,e_no=NoEs,v=VsNs,v_no=NoVs,as=Out1}, 
 		   #cl_mem{v=Vs,as=Out2}, Wait, CL) ->
     VsOut = NoFs*4,
-    C1 = wings_cl:cast(clearf, [VsNs,4,NoVs], NoVs, Wait, CL),
-    C2 = wings_cl:cast(clearf, [Out1,4,VsOut], VsOut, Wait, CL),
-    C3 = wings_cl:cast(clearf, [Out2,4,VsOut], VsOut, Wait, CL),
+    C1 = wings_cl:cast(memset4f, [VsNs,0.0,NoVs],  NoVs, Wait, CL),
+    C2 = wings_cl:cast(memset4f, [Out1,0.0,VsOut], VsOut, Wait, CL),
+    C3 = wings_cl:cast(memset4f, [Out2,0.0,VsOut], VsOut, Wait, CL),
     Args0 = [Fs,Vab,VsNs,NoFs,NoVs],
     Pass0 = wings_cl:cast(smooth_ns_pass0, Args0, ?PL_UNITS, [C1], CL),
     Args1 = [Es,Fs,Vab,Out1,Out2,NoEs],
@@ -728,8 +728,8 @@ cl_write_input(#base{f=Fs,e=Es,v=Vs, as=As},
 	       #cl_mem{v=VsOut},
 	       #cls{cl=CL}) ->
     NoVs = MaxVs * ?PL_UNITS,
-    Wait0 = wings_cl:cast(clearf, [VsIn, 4, NoVs], NoVs, [], CL),
-    Wait1 = wings_cl:cast(clearf, [VsOut, 4, NoVs], NoVs, [], CL), 
+    Wait0 = wings_cl:cast(memset4f, [VsIn, 0.0, NoVs], NoVs, [], CL),
+    Wait1 = wings_cl:cast(memset4f, [VsOut, 0.0, NoVs], NoVs, [], CL),
     W3 = wings_cl:write(FsIn,  Fs, CL), 
     W4 = wings_cl:write(EsIn,  Es, CL), 
     {ok, _} = cl:wait(Wait0), {ok, _} = cl:wait(Wait1),
