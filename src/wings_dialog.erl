@@ -19,8 +19,8 @@
 
 -record(in, {key, type, def, wx, validator, data}).
 
-info(Title, Info, _Options) ->
-    Parent = get(top_frame),
+info(Title, Info, Options) ->
+    Parent = proplists:get_value(top_frame, Options, get(top_frame)),
     Style  = {style, ?wxDEFAULT_DIALOG_STYLE bor ?wxRESIZE_BORDER},
     Size   = {size, {500, 400}},
     Dialog = wxDialog:new(Parent, ?wxID_ANY, Title,
@@ -39,38 +39,53 @@ info(Title, Info, _Options) ->
 %%   (orginal wings let camera events trough)
 ask(Title, Qs, Fun) ->
     dialog(true, Title, queries(Qs), Fun).
-ask(Bool, Title, Qs, Fun) ->
-    dialog(Bool, Title, queries(Qs), Fun).
+ask(Ask, Title, Qs, Fun) ->
+    dialog(Ask, Title, queries(Qs), Fun).
+
+queries(Qs0) ->
+    {Labels,Vals} = ask_unzip(Qs0),
+    [{hframe,
+      [{vframe,Labels},
+       {vframe,Vals}]}].
+
 
 dialog(Title, Qs, Fun) ->
     dialog(true, Title, Qs, Fun).
-dialog(Bool, Title, Qs, Fun) ->
-    {Dialog, Fields} = build_dialog(Bool, Title, Qs),
-    case Bool andalso wxDialog:showModal(Dialog) of
+dialog(Ask, Title, Qs0, Fun) when is_list(Qs0) ->
+    Qs = {vframe_dialog, Qs0, [{buttons, [ok, cancel]}]},
+    dialog(Ask, Title, Qs, Fun);
+dialog(Ask, Title, Qs, Fun) when not is_list(Qs) ->
+    {Dialog, Fields} = build_dialog(Ask, Title, Qs),
+    case Ask andalso wxDialog:showModal(Dialog) of
 	?wxID_CANCEL -> keep;
-	_Ok ->
-	    Values = [get_output(Bool, Field) || Field <- Fields],
-	    Bool andalso wxDialog:destroy(Dialog),
+	Result ->
+	    Values = [get_output(Ask, Result, Field) ||
+			 Field = #in{data=Data} <- Fields,
+			 Data =/= ignore],
+	    Ask andalso wxDialog:destroy(Dialog),
 	    return_result(Fun, Values)
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Helpers
 
-get_output(false, In=#in{def=Def}) ->
+get_output(false, _, In=#in{def=Def}) ->
     with_key(In, Def);
-get_output(_, In=#in{type=checkbox, wx=Ctrl}) ->
+get_output(true, Result, In) ->
+    get_output1(Result, In).
+
+get_output1(_, In=#in{type=checkbox, wx=Ctrl}) ->
     with_key(In,wxCheckBox:getValue(Ctrl));
-get_output(_, In=#in{type=radiobox, wx=Ctrl, data=Keys}) ->
+get_output1(_, In=#in{type=radiobox, wx=Ctrl, data=Keys}) ->
     ZeroIndex = wxRadioBox:getSelection(Ctrl),
     with_key(In, lists:nth(ZeroIndex+1, Keys));
-get_output(_, In=#in{type=filepicker, wx=Ctrl}) ->
+get_output1(_, In=#in{type=filepicker, wx=Ctrl}) ->
     with_key(In,wxFilePickerCtrl:getPath(Ctrl));
-get_output(_, In=#in{type=slider, wx=Ctrl, data={Convert,_}}) ->
+get_output1(_, In=#in{type=slider, wx=Ctrl, data={Convert,_}}) ->
     with_key(In,Convert(wxSlider:getValue(Ctrl)));
-get_output(_, In=#in{type=choice, wx=Ctrl}) ->
+get_output1(_, In=#in{type=choice, wx=Ctrl}) ->
     with_key(In,wxChoice:getClientData(Ctrl,wxChoice:getSelection(Ctrl)));
-get_output(_, In=#in{type=text, def=Def, wx=Ctrl, validator=Validate}) ->
+get_output1(_, In=#in{type=text, def=Def, wx=Ctrl, validator=Validate}) ->
     Str = wxTextCtrl:getValue(Ctrl),
     Res = if is_integer(Def) ->
 		  wings_ask:eval_integer(validate(Validate, Str));
@@ -79,7 +94,15 @@ get_output(_, In=#in{type=text, def=Def, wx=Ctrl, validator=Validate}) ->
 	     is_list(Def) ->
 		  Str
 	  end,
-    with_key(In, Res).
+    with_key(In, Res);
+get_output1(Result, In=#in{type=dialog_buttons}) ->
+    Atom = case Result of
+	       ?wxID_OK -> ok;
+	       ?wxID_CANCEL -> cancel;
+	       ?wxID_YES -> yes;
+	       ?wxID_NO -> no
+	   end,
+    with_key(In, Atom).
 
 with_key(#in{key=undefined}, Value) -> Value;
 with_key(#in{key=Key}, Value) ->  {Key, Value}.
@@ -95,7 +118,7 @@ return_result(Fun, Values) ->
     case Fun(Values) of
 	ignore ->
 	    ok;
-	#st{}=St ->  
+	#st{}=St ->
 	    wings_wm:send(Owner, {new_state,St});
 	{commit,#st{}=St0,#st{}=St}->
 	    wings_wm:send(Owner, {current_state,St0}),
@@ -107,12 +130,6 @@ return_result(Fun, Values) ->
 	    wings_wm:send(Owner, {action,Action})
     end,
     keep.
-
-queries(Qs0) ->
-    {Labels,Vals} = ask_unzip(Qs0),
-    [{hframe,
-	   [{vframe,Labels},
-	    {vframe,Vals}]}].
 
 ask_unzip(Qs) ->
     ask_unzip(Qs, [], []).
@@ -128,35 +145,53 @@ ask_unzip([], Labels, Vals) ->
     {lists:reverse(Labels),lists:reverse(Vals)}.
 
 build_dialog(false, _Title, Qs) ->
-    Fs = build(false, {vframe, Qs}, undefined, undefined, []),
-    {undefined, Fs};
+    Fs = build(false, Qs, undefined, undefined, []),
+    {undefined, lists:reverse(Fs)};
 build_dialog(true, Title, Qs) ->
     Parent = get(top_frame),
     Style  = {style, ?wxDEFAULT_DIALOG_STYLE bor ?wxRESIZE_BORDER},
     Dialog = wxDialog:new(Parent, ?wxID_ANY, Title, [Style]),
     Panel  = wxPanel:new(Dialog, []),
     Top    = wxBoxSizer:new(?wxVERTICAL),
-    Fields = case is_list(Qs) of 
-		 true -> 
-		     Sz = wxBoxSizer:new(?wxVERTICAL),
-		     Fs = build(true, {vframe, Qs}, Panel, Sz, []),
-		     wxSizer:add(Top, Panel, [{proportion, 1}, 
-					      {flag, ?wxEXPAND bor ?wxALL},
-					      {border, 5}
-					     ]),
-		     wxWindow:setSizer(Panel, Sz),
-		     wxSizer:setSizeHints(Sz, Panel),
-		     Ok = wxDialog:createButtonSizer(Dialog, ?wxOK bor ?wxCANCEL),
-		     wxSizer:add(Top, Ok, [{proportion, 0},
-					   {flag, ?wxEXPAND bor ?wxALL},
-					   {border, 5}]),
-		     Fs;
-		 false ->
-		     build(true, Qs, Panel, Top, [])
-	     end,
+    Sizer  = wxBoxSizer:new(?wxVERTICAL),
+    Fields0 = build(true, Qs, Panel, Sizer, []),
+    wxWindow:setSizer(Panel, Sizer),
+%%    wxSizer:setSizeHints(Sizer, Panel),
+    wxSizer:add(Top, Panel, [{proportion, 1}, {flag, ?wxEXPAND bor ?wxALL}, {border, 5}]),
+    Fields = setup_buttons(Dialog, Top, Fields0),
     wxWindow:setSizerAndFit(Dialog, Top),
-    wxSizer:setSizeHints(Top, Dialog),
+%%    wxSizer:setSizeHints(Top, Dialog),
     {Dialog, lists:reverse(Fields)}.
+
+setup_buttons(Dialog, Top, [DB=#in{type=dialog_buttons, wx=Fun}|In]) ->
+    Object = Fun(Dialog, Top),
+    [DB#in{wx=Object}|In];
+setup_buttons(_, _, Fields) ->
+    Fields.
+
+build(Ask, {vframe_dialog, Qs, Flags}, Parent, Sizer, []) ->
+    Def = proplists:get_value(value, Flags, ?wxID_OK),
+    Buttons = proplists:get_value(buttons, Flags, [ok, cancel]),
+    ButtMask = lists:foldl(fun(ok, Butts)     -> ?wxOK bor Butts;
+			      (cancel, Butts) -> ?wxCANCEL bor Butts;
+			      (yes, Butts)    -> ?wxYES bor Butts;
+			      (no,  Butts)    -> ?wxNO bor Butts
+			   end, 0, Buttons),
+    Create = fun(Dialog, TopSizer) ->
+		     Ok = wxDialog:createButtonSizer(Dialog, ButtMask),
+		     wxSizer:add(TopSizer, Ok, [{proportion, 0},
+						{flag, ?wxEXPAND bor ?wxALL},
+						{border, 5}]),
+		     Close = fun(#wx{id=Id},_) ->
+				     wxDialog:endModal(Dialog, Id)
+			     end,
+		     wxDialog:connect(Dialog, command_button_clicked,
+				      [{id, wxID_NO}, {callback,Close}]),
+		     Ok
+	     end,
+    In = build(Ask, {vframe, Qs}, Parent, Sizer, []),
+    [#in{key=proplists:get_value(key,Flags), def=Def, data=proplists:get_value(key,Flags,ignore),
+	 type=dialog_buttons, wx=Create}|In];
 
 build(Ask, {vframe, Qs}, Parent, Sizer, In) ->
     build(Ask, {vframe, Qs, []}, Parent, Sizer, In);
@@ -177,7 +212,14 @@ build(Ask, {hradio, Name, Alternatives, Def}, Parent, Sizer, In) ->
     build_radio(Ask, Name, Def, ?wxRA_SPECIFY_ROWS, Alternatives, Parent, Sizer, In);
 
 build(true, {label, Label}, Parent, Sizer, In) ->
-    Text = wxStaticText:new(Parent, ?wxID_ANY, Label),
+    build(true, {label, Label, []}, Parent, Sizer, In);
+build(true, {label, Label, Flags}, Parent, Sizer, In) ->
+    Limit = proplists:get_value(break, Flags, infinite),
+    {_,Lines0=[First|_]} = wings_text:break_lines([Label], Limit),
+    Lines = lists:foldr(fun(Row, Acc) when Row =:= First -> [Row|Acc];
+			   (Row, Acc) -> ["\n", Row|Acc]
+			end, [], Lines0),
+    Text = wxStaticText:new(Parent, ?wxID_ANY, Lines),
     add_sizer(label, Sizer, Text),
     In;
 build(true, panel, _Parent, Sizer, In) ->
@@ -304,14 +346,32 @@ build(Ask, {Label, Def, Flags}, Parent, Sizer, In)
     [#in{key=proplists:get_value(key,Flags), 
 	 def=Def, type=checkbox, wx=create(Ask, Create)}|In];
 
+build(Ask, {help, Title, Fun}, Parent, Sizer, In) ->
+    TopFrame = get(top_frame),
+    Display = fun(_,_) ->
+		      info(Title, Fun(), [{top_frame, TopFrame}])
+	      end,
+    Create = fun() ->
+		     Button = wxButton:new(Parent, ?wxID_HELP),
+		     wxButton:connect(Button, command_button_clicked, [{callback, Display}]),
+		     add_sizer(button, Sizer, Button),
+		     Button
+	     end,
+    create(Ask,Create),
+    In;
+
 build(false, _Q, _Parent, _Sizer, In) -> 
     In;
 build(Ask, Q, _Parent, _Sizer, In) ->
-    io:format("~p:~p: Unhandled ask=~p, ~p~n",[?MODULE,?LINE,Ask,Q]),
+    io:format("~p:~p: Unhandled ask=~p, ~p~n  From: ~p",
+	      [?MODULE,?LINE,Ask,Q, erlang:process_info(self(), current_stacktrace)]),
     In.
 
-build_box(true, Type, Qs, _Flags, Parent, Top, In0) ->
-    Sizer = wxBoxSizer:new(Type),
+build_box(true, Type, Qs, Flags, Parent, Top, In0) ->
+    Sizer = case proplists:get_value(title, Flags) of
+		undefined -> wxBoxSizer:new(Type);
+		Title -> wxStaticBoxSizer:new(Type, Parent, [{label, Title}])
+	    end,
     Input = lists:foldl(fun(Q, Input) ->
 				build(true, Q, Parent, Sizer, Input)
 			end, In0, Qs),
@@ -380,7 +440,7 @@ add_sizer(What, Sizer, Ctrl) ->
     wxSizer:add(Sizer, Ctrl, [{proportion, Propportion}, {border, Border}, {flag, Flags}]).
 
 sizer_flags(label, ?wxHORIZONTAL)     -> {0, 0, ?wxALIGN_CENTER_VERTICAL};
-sizer_flags(label, ?wxVERTICAL)       -> {1, 0, 0};
+sizer_flags(label, ?wxVERTICAL)       -> {1, 0, ?wxALIGN_CENTER_VERTICAL};
 sizer_flags(separator, ?wxHORIZONTAL) -> {1, 5, ?wxALL bor ?wxALIGN_CENTER_VERTICAL};
 sizer_flags(separator, ?wxVERTICAL)   -> {0, 5, ?wxALL bor ?wxEXPAND};
 sizer_flags(text, ?wxHORIZONTAL)      -> {1, 0, ?wxALIGN_CENTER_VERTICAL};
@@ -392,7 +452,7 @@ sizer_flags(table,  _)                -> {4, 0, ?wxEXPAND};
 sizer_flags({radiobox, Dir}, Dir)     -> {5, 0, ?wxALIGN_CENTER_VERTICAL};
 sizer_flags({radiobox, _}, _)         -> {0, 0, ?wxEXPAND bor ?wxALIGN_CENTER_VERTICAL};
 sizer_flags({box, Dir}, Dir)          -> {1, 0, ?wxEXPAND bor ?wxALIGN_CENTER_VERTICAL};
-sizer_flags({box, _}, _)              -> {1, 0, ?wxEXPAND bor ?wxALIGN_CENTER_VERTICAL};
+sizer_flags({box, _}, _)              -> {0, 0, ?wxEXPAND bor ?wxALIGN_CENTER_VERTICAL};
 sizer_flags(_, ?wxHORIZONTAL)         -> {1, 0, ?wxALIGN_CENTER_VERTICAL};
 sizer_flags(_, ?wxVERTICAL)           -> {0, 0, ?wxEXPAND}.
 
