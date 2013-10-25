@@ -648,9 +648,9 @@ save_group(Key, Sel, #st{ssels=Ssels0}=St) ->
     St#st{ssels=Ssels}.
 
 new_group(_) ->
-    wings_ask:ask(?__(1,"Create New Group"),
-		  [{?__(2,"Group Name"), ""}],
-		  fun([String]) -> {select,{new_group_name,String}} end).
+    wings_dialog:ask(?__(1,"Create New Group"),
+		     [{?__(2,"Group Name"), ""}],
+		     fun([String]) -> {select,{new_group_name,String}} end).
 
 new_group_name(Name, #st{ssels=Ssels0,selmode=Mode,sel=Sel}=St) ->
     Key = {Mode,Name},
@@ -879,7 +879,7 @@ random(true, St) ->
     Qs = [{vframe,Qs0}],
     Title =  ?__(1,"Select Random"),
     Cmd = {select,by,random},
-    wings_ask:dialog_preview(Cmd, true, Title, Qs, St);
+    wings_dialog:dialog_preview(Cmd, true, Title, Qs, St);
 random([Percent], St) -> random(Percent, St);
 random(Percent, #st{selmode=Mode, sel=[]}=St) ->
     P = Percent / 100,
@@ -1022,9 +1022,9 @@ by_name(#st{shapes=Shs}) ->
     case gb_trees:is_empty(Shs) of
 	true -> wings_u:error_msg(?__(1,"Nothing to select."));
 	_ ->
-        wings_ask:ask(?__(2,"Select by name"),
-              [{?__(3,"Name"), ""}],
-              fun([String]) -> {select,{by,{by_name_with,String}}} end)
+	    wings_dialog:ask(?__(2,"Select by name"),
+			     [{?__(3,"Name"), ""}],
+			     fun([String]) -> {select,{by,{by_name_with,String}}} end)
     end.
 
 by_name_with(Filter, #st{shapes=Shs}=St) ->
