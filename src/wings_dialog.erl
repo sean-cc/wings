@@ -10,6 +10,7 @@
 %%
 
 -module(wings_dialog).
+-define(NEED_ESDL, 1). %% Needs to send mouseevents to camera
 -include("wings.hrl").
 -export([info/3, 
 	 ask/3, ask/4, 
@@ -18,7 +19,7 @@
 -compile(export_all).
 
 -record(in, {key, type, def, wx, validator, data}).
-
+-record(eh, {dialog,fs,apply,owner}).
 
 %% Display a text window (Info converted to html)
 info(Title, Info, Options) ->
@@ -47,71 +48,39 @@ dialog_preview(Cmd, Bool, Title, Qs, St) ->
 %% Currently a modal dialog
 %%   (orginal wings let camera events trough)
 ask(Title, Qs0, Fun) ->
-    {Preview, Qs} = preview(Qs0),
-    dialog(true, Title, Preview, queries(Qs), Fun).
+    {PreviewCmd, Qs} = preview_cmd(Qs0),
+    dialog(true, Title, PreviewCmd, queries(Qs), Fun).
 ask(Ask, Title, Qs0, Fun) ->
-    {Preview, Qs} = preview(Qs0),
-    dialog(Ask, Title, Preview, queries(Qs), Fun).
-ask(Ask, Title, Preview, Qs, Fun) ->
-    dialog(Ask, Title, Preview, queries(Qs), Fun).
+    {PreviewCmd, Qs} = preview_cmd(Qs0),
+    dialog(Ask, Title, PreviewCmd, queries(Qs), Fun).
+ask(Ask, Title, PreviewCmd, Qs, Fun) ->
+    dialog(Ask, Title, PreviewCmd, queries(Qs), Fun).
 
 dialog(Title, Qs0, Fun) ->
-    {Preview, Qs} = preview(Qs0),
-    dialog(true, Title, Preview, Qs, Fun).
+    {PreviewCmd, Qs} = preview_cmd(Qs0),
+    dialog(true, Title, PreviewCmd, Qs, Fun).
 dialog(Ask, Title, Qs0, Fun) ->
-    {Preview, Qs} = preview(Qs0),
-    dialog(Ask, Title, Preview, Qs, Fun).
-dialog(Ask, Title, Preview, Qs0, Fun) when is_list(Qs0) ->
+    {PreviewCmd, Qs} = preview_cmd(Qs0),
+    dialog(Ask, Title, PreviewCmd, Qs, Fun).
+dialog(Ask, Title, PreviewCmd, Qs0, Fun) when is_list(Qs0) ->
     Qs = {vframe_dialog, Qs0, [{buttons, [ok, cancel]}]},
-    dialog(Ask, Title, Preview, Qs, Fun);
-dialog(Ask, Title, Preview, Qs, Fun) when not is_list(Qs) ->
+    dialog(Ask, Title, PreviewCmd, Qs, Fun);
+dialog(Ask, Title, PreviewCmd, Qs, Fun) when not is_list(Qs) ->
     case element(1,Qs) of
-	preview -> error(Qs);
-	drag_preview -> error(Qs);
+	preview_cmd -> error(Qs);
+	drag_preview_cmd -> error(Qs);
 	_Assert -> ok
     end,
-    {Dialog, Fields} = build_dialog(Ask orelse Preview, Title, Qs),
-    enter_dialog(Ask, Preview, Dialog, Fields, Fun).
+    {Dialog, Fields} = build_dialog(Ask andalso PreviewCmd, Title, Qs),
+    %% io:format("Enter Dialog ~p ~p ~p~n",[Ask,PreviewCmd, Fields]),
+    enter_dialog(Ask, PreviewCmd, Dialog, Fields, Fun).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Helpers
 
-enter_dialog(true, _, _, Fields, Fun) -> % No dialog return def values
-    Values = [with_key(Field, Def) ||
-		 Field = #in{data=Data, def=Def} <- Fields,
-		 Data =/= ignore],
-    return_result(Fun, Values);
-enter_dialog(_, false, Dialog, Fields, Fun) -> %% No preview / modal dialog
-    case wxDialog:showModal(Dialog) of
-	?wxID_CANCEL -> keep;
-	Result ->
-	    Values = [get_output(Result, Field) ||
-			 Field = #in{data=Data} <- Fields,
-			 Data =/= ignore],
-	    return_result(Fun, Values)
-    end;
-enter_dialog(_, Preview, Dialog, Fields, Fun) ->
-    Name = dialog_blanket,
-    setup_blanket(Name),
-    Forward = fun(Event, _) -> wings_wm:psend(Name, Event) end,
-    spawn_link(fun() ->
-		       wxDialog:connect(Dialog, command_button_clicked,
-					[{id, ?wxID_OK, ?wxID_NO}, {callback,Forward}]),
-		       wxDialog:show(Dialog)
-	       end),
-    keep;
-    %% 	?wxID_CANCEL -> keep;
-    %% 	Result ->
-    %% 	    Values = [get_output(Result, Field) ||
-    %% 			 Field = #in{data=Data} <- Fields,
-    %% 			 Data =/= ignore],
-    %% 	    wxDialog:destroy(Dialog),
-    %% 	    return_result(Fun, Values)
-    %% end.
-
-preview(Preview = {preview, _}) -> Preview;
-preview(Preview = {drag_preview, _}) -> Preview;
-preview(Qs) -> {true, Qs}.
+preview_cmd(Preview = {preview, _}) -> Preview;
+preview_cmd(Preview = {drag_preview, _}) -> Preview;
+preview_cmd(Qs) -> {no_preview, Qs}.
 
 command_name({Menu,Cmd}, Res) ->
     {Menu,{Cmd,Res}};
@@ -133,6 +102,88 @@ queries(Qs0) ->
     [{hframe,
       [{vframe,Labels},
        {vframe,Vals}]}].
+
+enter_dialog(false, _, _, Fields, Fun) -> % No dialog return def values
+    Values = [with_key(Field, Def) ||
+		 Field = #in{data=Data, def=Def} <- Fields,
+		 Data =/= ignore],
+    return_result(Fun, Values, wings_wm:this());
+enter_dialog(true, no_preview, Dialog, Fields, Fun) -> %% No preview cmd / modal dialog
+    case wxDialog:showModal(Dialog) of
+	?wxID_CANCEL -> keep;
+	Result ->
+	    Values = [get_output(Result, Field) ||
+			 Field = #in{data=Data} <- Fields,
+			 Data =/= ignore],
+	    wxDialog:destroy(Dialog),
+	    return_result(Fun, Values, wings_wm:this())
+    end;
+enter_dialog(true, _Preview, Dialog, Fields, Fun) ->
+    Forward = fun(Event, _) -> 
+		      io:format("Send event ~p to wings~n", [Event]),
+		      wxDialog:show(Dialog, [{show,false}]),
+		      wings_wm:psend(dialog_blanket, Event) 
+	      end,
+    Env = wx:get_env(),
+    spawn_link(fun() ->
+		       wx:set_env(Env),
+		       wxDialog:connect(Dialog, command_button_clicked,
+					[%% {id, ?wxID_OK, ?wxID_NO}, 
+					 {callback,Forward}]),
+		       wxDialog:connect(Dialog, close_window,
+					[%% {id, ?wxID_OK, ?wxID_NO}, 
+					 {callback,Forward}]),
+		       wxDialog:show(Dialog)
+	       end),
+    State = #eh{dialog=Dialog, fs=Fields, apply=Fun, owner=wings_wm:this()},
+    Op = {push,fun(Ev) -> event_handler(Ev, State) end},
+    {TopW,TopH} = wings_wm:top_size(),
+    wings_wm:new(dialog_blanket, {0,0,highest}, {TopW,TopH}, Op),
+    keep.
+
+notify_event_handler(false, _Msg) -> fun() -> ignore end;
+notify_event_handler(no_preview, _) -> fun() -> ignore end;
+notify_event_handler(_, Msg) -> 
+    fun() -> wings_wm:psend(dialog_blanket, Msg) end.
+    
+
+event_handler(#wx{id=?wxID_CANCEL}, #eh{dialog=Dialog, apply=Fun, owner=Owner}) ->
+    wxDialog:destroy(Dialog),
+    #st{}=St = Fun(cancel),
+    wings_wm:send(Owner, {update_state,St}),
+    delete;
+event_handler(#wx{id=Result}=Ev, #eh{dialog=Dialog, fs=Fields, apply=Fun, owner=Owner}) ->
+    io:format("Ev closing ~p~n",[Ev]),
+    Values = [get_output(Result, Field) ||
+		 Field = #in{data=Data} <- Fields,
+		 Data =/= ignore],
+    wxDialog:destroy(Dialog),
+    return_result(Fun, Values, Owner),
+    delete;
+event_handler(preview, #eh{fs=Fields, apply=Fun, owner=Owner}) ->
+    Values = [get_output(preview, Field) ||
+		 Field = #in{data=Data} <- Fields,
+		 Data =/= ignore],
+    case Fun({dialog_preview,Values}) of
+	{preview,#st{}=St0,#st{}=St} ->
+	    wings_wm:send_after_redraw(Owner, {update_state,St}),
+	    wings_wm:send(Owner, {current_state,St0});
+	{preview,Action,#st{}=St}->
+	    wings_wm:send_after_redraw(Owner, {action,Action}),
+	    wings_wm:send(Owner, {current_state,St});
+	Action when is_tuple(Action); is_atom(Action) ->
+	    io:format("~p:~p: ~p~n",[?MODULE,?LINE,{preview,[Owner,{action,Action}]}]),
+	    wings_wm:send(Owner, {action,Action})
+    end;
+event_handler(#mousebutton{x=X0,y=Y0}=Ev, _) ->
+    {X,Y} = wings_wm:local2global(X0, Y0),
+    Win = wings_wm:geom_below(X, Y),
+    wings_wm:send(Win, {camera,Ev,keep});
+event_handler(#mousemotion{}, _) -> keep;
+event_handler(Ev, _) -> 
+    io:format("unhandled Ev ~p~n",[Ev]),
+    keep.
+
 
 get_output(Result, In) ->
     get_output1(Result, In).
@@ -176,8 +227,7 @@ validate(Fun, Input) ->
 	Str when is_list(Str) -> Str
     end.
 
-return_result(Fun, Values) ->
-    Owner = wings_wm:this(),
+return_result(Fun, Values, Owner) ->
     case Fun(Values) of
 	ignore ->
 	    ok;
@@ -243,11 +293,17 @@ build(Ask, {vframe_dialog, Qs, Flags}, Parent, Sizer, []) ->
 		     wxSizer:add(TopSizer, Ok, [{proportion, 0},
 						{flag, ?wxEXPAND bor ?wxALL},
 						{border, 5}]),
-		     Close = fun(#wx{id=Id},_) ->
-				     wxDialog:endModal(Dialog, Id)
-			     end,
-		     wxDialog:connect(Dialog, command_button_clicked,
-				      [{id, wxID_NO}, {callback,Close}]),
+		     case Ask of
+			 no_preview -> %% I.e. non preview 
+			     Close = fun(#wx{id=Id},_) ->
+					     wxDialog:endModal(Dialog, Id)
+				     end,
+			     wxDialog:connect(Dialog, command_button_clicked,
+					      [{id, ?wxID_NO}, {callback,Close}]);
+			 _ ->
+			     io:format("Ignoring NO events ~p~n",[Ask]),
+			     ignore %% Preview connects it self
+		     end,
 		     Ok
 	     end,
     In = build(Ask, {vframe, Qs}, Parent, Sizer, []),
@@ -308,7 +364,7 @@ build(Ask, {text, Def, Flags}, Parent, Sizer, In) ->
 
 build(Ask, {slider, {text, Def, Flags}}, Parent, Sizer, In) ->
     {_Max0,Validator,_Charset} = wings_ask:validator(Def, Flags),
-    Create = fun() -> create_slider(Def, Flags, Validator, Parent, Sizer) end,
+    Create = fun() -> create_slider(Ask, Def, Flags, Validator, Parent, Sizer) end,
     [#in{key=proplists:get_value(key,Flags), def=Def,
 	 type=text, wx=create(Ask,Create), validator=Validator}|In];
 
@@ -459,7 +515,7 @@ build_radio(Ask, Name, Def, Direction, Alternatives, Parent, Sizer, In) ->
 	     end,
     [#in{def=Def, type=radiobox, wx=create(Ask, Create), data=Keys}|In].
 
-create_slider(Def, Flags, Validator, Parent, TopSizer) when is_number(Def) ->
+create_slider(Ask, Def, Flags, Validator, Parent, TopSizer) when is_number(Def) ->
     Range = proplists:get_value(range, Flags),
     Sizer = wxBoxSizer:new(?wxHORIZONTAL),
     {Min, Value, Max, Style, ToText, ToSlider} = slider_style(Def, Range),
@@ -468,13 +524,17 @@ create_slider(Def, Flags, Validator, Parent, TopSizer) when is_number(Def) ->
     wxSizer:add(Sizer, Slider, [{proportion,3}, {flag, ?wxEXPAND}]),
     wxSizer:add(Sizer, Text,   [{proportion,1}]),
     add_sizer(slider, TopSizer, Sizer),
-    UpdateText = fun(#wx{event=#wxScroll{commandInt=Where}}, _) ->
+    PreviewFun = notify_event_handler(Ask, preview),
+    UpdateText = fun(#wx{event=#wxCommand{commandInt=Where}}, _) ->
+			 PreviewFun(),
 			 wxTextCtrl:setValue(Text, to_str(ToText(Where)))
 		 end,
-    wxSlider:connect(Slider, scroll_thumbtrack, [{callback, UpdateText}]),
+    wxSlider:connect(Slider, command_slider_updated, [{callback, UpdateText}]),
     UpdateSlider = fun(#wx{event=#wxCommand{cmdString=Str}}, _) ->
 			   case Validator(Str) of
-			       ok -> wxSlider:setValue(Slider, ToSlider(Str));
+			       ok -> 
+				   PreviewFun(),
+				   wxSlider:setValue(Slider, ToSlider(Str));
 			       _ -> ignore
 			   end
 		   end,
