@@ -119,21 +119,23 @@ enter_dialog(true, no_preview, Dialog, Fields, Fun) -> %% No preview cmd / modal
 	    return_result(Fun, Values, wings_wm:this())
     end;
 enter_dialog(true, _Preview, Dialog, Fields, Fun) ->
-    Forward = fun(Event, _) -> 
-		      io:format("Send event ~p to wings~n", [Event]),
-		      wxDialog:show(Dialog, [{show,false}]),
-		      wings_wm:psend(dialog_blanket, Event) 
-	      end,
     Env = wx:get_env(),
     spawn_link(fun() ->
 		       wx:set_env(Env),
+		       Me = self(),
+		       Forward = fun(Event, _) ->
+					 %% io:format("Send event ~p to wings~n", [Event]),
+					 wxDialog:show(Dialog, [{show,false}]),
+					 wings_wm:psend(dialog_blanket, Event),
+					 Me ! closed
+				 end,
+
 		       wxDialog:connect(Dialog, command_button_clicked,
-					[%% {id, ?wxID_OK, ?wxID_NO}, 
+					[{id, ?wxID_OK},
+					 {lastId, ?wxID_NO},
 					 {callback,Forward}]),
-		       wxDialog:connect(Dialog, close_window,
-					[%% {id, ?wxID_OK, ?wxID_NO}, 
-					 {callback,Forward}]),
-		       wxDialog:show(Dialog)
+		       wxDialog:show(Dialog),
+		       receive closed -> ok end
 	       end),
     State = #eh{dialog=Dialog, fs=Fields, apply=Fun, owner=wings_wm:this()},
     Op = {push,fun(Ev) -> event_handler(Ev, State) end},
@@ -143,17 +145,15 @@ enter_dialog(true, _Preview, Dialog, Fields, Fun) ->
 
 notify_event_handler(false, _Msg) -> fun() -> ignore end;
 notify_event_handler(no_preview, _) -> fun() -> ignore end;
-notify_event_handler(_, Msg) -> 
-    fun() -> wings_wm:psend(dialog_blanket, Msg) end.
-    
+notify_event_handler(_, Msg) -> fun() -> wings_wm:psend(dialog_blanket, Msg) end.
 
 event_handler(#wx{id=?wxID_CANCEL}, #eh{dialog=Dialog, apply=Fun, owner=Owner}) ->
     wxDialog:destroy(Dialog),
     #st{}=St = Fun(cancel),
     wings_wm:send(Owner, {update_state,St}),
     delete;
-event_handler(#wx{id=Result}=Ev, #eh{dialog=Dialog, fs=Fields, apply=Fun, owner=Owner}) ->
-    io:format("Ev closing ~p~n",[Ev]),
+event_handler(#wx{id=Result}=_Ev, #eh{dialog=Dialog, fs=Fields, apply=Fun, owner=Owner}) ->
+    %% io:format("Ev closing ~p~n",[_Ev]),
     Values = [get_output(Result, Field) ||
 		 Field = #in{data=Data} <- Fields,
 		 Data =/= ignore],
@@ -180,8 +180,8 @@ event_handler(#mousebutton{x=X0,y=Y0}=Ev, _) ->
     Win = wings_wm:geom_below(X, Y),
     wings_wm:send(Win, {camera,Ev,keep});
 event_handler(#mousemotion{}, _) -> keep;
-event_handler(Ev, _) -> 
-    io:format("unhandled Ev ~p~n",[Ev]),
+event_handler(_Ev, _) ->
+    %% io:format("unhandled Ev ~p~n",[_Ev]),
     keep.
 
 
@@ -294,14 +294,13 @@ build(Ask, {vframe_dialog, Qs, Flags}, Parent, Sizer, []) ->
 						{flag, ?wxEXPAND bor ?wxALL},
 						{border, 5}]),
 		     case Ask of
-			 no_preview -> %% I.e. non preview 
+			 no_preview -> %% I.e. non preview
 			     Close = fun(#wx{id=Id},_) ->
 					     wxDialog:endModal(Dialog, Id)
 				     end,
 			     wxDialog:connect(Dialog, command_button_clicked,
 					      [{id, ?wxID_NO}, {callback,Close}]);
 			 _ ->
-			     io:format("Ignoring NO events ~p~n",[Ask]),
 			     ignore %% Preview connects it self
 		     end,
 		     Ok
