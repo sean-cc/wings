@@ -587,7 +587,9 @@ to_str(Number) when is_integer(Number) ->
 to_str(Float) when is_float(Float) ->
     wings_util:nice_float(Float);
 to_str(List = [C|_]) when is_integer(C) ->
-    List.
+    List;
+to_str([]) -> [].
+
 
 pos(C, S) -> pos(C, S, 0).
 pos(C, [C|_Cs], I) -> I;
