@@ -416,7 +416,7 @@ drawVertices(_Type, <<>>) ->
 drawVertices(Type, Bin) -> 
     gl:vertexPointer(3, ?GL_FLOAT, 0, Bin),
     gl:drawArrays(Type, 0, byte_size(Bin) div 12),
-    free(Bin).
+    keep({vertices, Type}, Bin).
 
 drawPolygons(<<>>, _PsLens) -> 
     ok;
@@ -426,7 +426,7 @@ drawPolygons(Polys, PsLens) ->
 		  gl:drawArrays(?GL_POLYGON, Start, Length),
 		  Length+Start
 	  end, 0, PsLens),
-    free(Polys).
+    keep(polys, Polys).
 
 visible_vertices(#we{vp=Vtab0}=We) ->
     case wings_we:is_open(We) of
@@ -927,7 +927,7 @@ draw_flat_faces(#vab{face_vs=BinVs,face_fn=Ns,face_uv=UV,face_ts=TS,
     wings_draw_setup:disableColorPointer(Col),
     wings_draw_setup:disableTexCoordPointer(UV),
     wings_draw_setup:disableTangentCoordPointer(TS),
-    free(D),
+    keep(flat_faces, D),
     Dl.
 
 %%%
@@ -978,7 +978,7 @@ draw_smooth_faces(#vab{face_vs=BinVs,face_sn=Ns,face_uv=UV,face_ts=TS,
     wings_draw_setup:disableColorPointer(Col),
     wings_draw_setup:disableTexCoordPointer(UV),
     wings_draw_setup:disableTangentCoordPointer(TS),
-    free(D),
+    keep(smooth_faces, D),
     Res.
 
 draw_mat_faces(MatGroups, Mtab, ActiveColor) ->
@@ -1077,21 +1077,22 @@ make_normals_dlist_1(face, Faces, We) ->
 make_normals_dlist_1(body, _, #we{fs=Ftab}=We) ->
     make_normals_dlist_1(face, gb_sets:from_list(gb_trees:keys(Ftab)), We).
 
-%% This function does not actually free the binary.
+%% This function does actually keep the binary.
 %% It is merely a dummy function that you can call to force
 %% a binary to be kept as long as it is needed.
-%%
+%% Which is needed for a lot time longer when running in a smp environment
 %% Example usage:
 %%
 %%    gl:vertexPointer(..., Buffer)
 %%       ...
 %%       gl:drawArrays(...)
 %%       ...
-%%    free(Buffer).
+%%    keep(What, Buffer).
 %%
-%% Without the call to free/1 at the end of the function,
+%% Without the call to keep/1 at the end of the function,
 %% Buffer could be deallocated directly after the call
 %% to gl:vertexPointer/4 if there happened to be
 %% a garbage collection.
 %%
-free(_) -> ok.
+keep(What, Bin) -> 
+    put(What, Bin).

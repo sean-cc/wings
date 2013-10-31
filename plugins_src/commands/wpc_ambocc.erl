@@ -93,9 +93,16 @@ make_disp_list(St) ->
     DrawAll = fun(We) -> draw_we(We,St) end,
     DispList = gl:genLists(1),
     gl:newList(DispList, ?GL_COMPILE),
-    lists:foreach(DrawAll, gb_trees:values(Shapes)),
+    Vabs = lists:map(DrawAll, gb_trees:values(Shapes)),
     gl:endList(),
+    %% Make sure to keep binaries alive until used, 
+    %% do a sync call
+    gl:getPolygonStipple(),
+    free(Vabs),
     DispList.
+
+free(_Vabs) ->
+    ok.
 
 draw_we(We, _) when ?IS_NOT_VISIBLE(We#we.perm) -> ok;
 draw_we(We, _) when ?IS_NOT_SELECTABLE(We#we.perm) -> ok;
@@ -106,7 +113,7 @@ draw_we(We, St) ->
     Count = wings_draw_setup:face_vertex_count(Vab),
     gl:drawArrays(?GL_TRIANGLES, 0, Count),
     wings_draw_setup:disableVertexPointer(Vs),
-    ok.
+    Vab.
 
 get_ao_factor(Buffer) ->
     NumWhitePixels = num_white(Buffer, 0),
